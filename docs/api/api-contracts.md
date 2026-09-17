@@ -1,8 +1,12 @@
-# FlowGuard — API Contracts (Phase 0)
+# FlowGuard — API Contracts
 
 Contract-level definitions. Full OpenAPI specs are generated from the
-actual FastAPI implementations starting in Phase 1 — this document is the
-source of truth those implementations must match, not a replacement for it.
+actual FastAPI implementations (available at each service's `/docs` once
+running) — this document is the source of truth those implementations
+must match, not a replacement for it. Updated after Phase 1 to reflect
+two corrections found while implementing: `PaymentRequest` dropped the
+unused `provider` field (see note below), and User Service gained a
+`/credit` endpoint that Phase 0 hadn't anticipated needing.
 
 Every endpoint, on every service, additionally exposes:
 - `GET /health` — liveness (process is up)
@@ -42,8 +46,16 @@ Fraud Agent → User Service freeze endpoint).
 | PATCH | `/internal/users/{id}/freeze` | **yes** | `{reason, source, risk_assessment_id?}` | `UserResponse` |
 | PATCH | `/internal/users/{id}/unfreeze` | **yes** | `{reason, source}` | `UserResponse` |
 | POST | `/internal/users/{id}/debit` | **yes** | `{amount, currency, transaction_id}` | `{balance}` or `409` on insufficient funds |
+| POST | `/internal/users/{id}/credit` | **yes** | `{amount, currency, transaction_id}` | `{balance}` |
 
 `UserResponse`: `{id, email, full_name, status, balance, currency, created_at}`
+
+`/credit` didn't appear in the original Phase 0 contract — it was added
+during Phase 1 implementation as the compensating action for a debit that
+must be reversed (e.g. Payment Service debited the user, then the provider
+declined the capture). Unlike `/debit`, it doesn't require the account to
+be `active` — reversing money back to the user must succeed even on a
+frozen account.
 
 ## Payment Service
 
@@ -56,10 +68,23 @@ Fraud Agent → User Service freeze endpoint).
 | POST | `/internal/circuit-breakers/{dependency}/reset` | **yes** | — | `{dependency, state}` |
 | POST | `/internal/recover` | **yes** | — | `{status: "recovered" \| "unchanged"}` |
 
-`PaymentRequest`: `{user_id, amount, currency, provider}`
-`PaymentResponse`: `{id, user_id, amount, currency, status, provider, provider_reference, created_at}`
+`PaymentRequest`: `{user_id, amount, currency}`
+`PaymentResponse`: `{id, user_id, amount, currency, status, provider, provider_reference, failure_reason, created_at}`
 
 `dependency` for breaker endpoints ∈ `{fraud, user, provider}`.
+
+`provider` dropped out of `PaymentRequest` during Phase 1 implementation:
+with only one configured provider (`MockPaymentProvider`) there was
+nothing for a client-supplied value to select between, and accepting-but-
+silently-ignoring a field is worse than not accepting it. `provider`
+returns in the request once Phase 10 makes provider selection real; until
+then it's server-side config, not client input — see
+`services/payment/app/models/schemas.py`.
+
+The three `/internal/circuit-breakers/*` and `/internal/recover` endpoints
+above are not implemented yet — they require an actual circuit breaker to
+control, which is Phase 5. Phase 1's Payment Service has no `/internal/*`
+routes at all.
 
 ## Fraud Service
 
