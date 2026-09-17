@@ -1,0 +1,146 @@
+# FlowGuard Code Standards
+
+Supersedes the old `CODE_STANDARDS.md` (now in
+[archive/](archive/CODE_STANDARDS.md)), updated for the Gateway, the
+Monitor/Healer/Fraud Agent split, and the Ops Controller.
+
+## Monorepo Folder Structure
+
+```
+flowguard/
+├── services/
+│   ├── gateway/
+│   ├── payment/
+│   ├── fraud/
+│   ├── user/
+│   └── notification/
+├── agents/
+│   ├── monitor/
+│   ├── healer/
+│   └── fraud/
+├── infra/
+│   ├── ops-controller/      # allowlisted action executor, see ADR-0005
+│   ├── docker/
+│   ├── terraform/
+│   └── deployment/
+├── shared/
+│   ├── events/
+│   ├── schemas/
+│   ├── telemetry/
+│   └── config/
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── chaos/
+├── docs/
+├── docker-compose.yml
+├── .env.example
+└── .github/workflows/
+```
+
+## Folder Structure Per Service
+
+Every service under `services/<name>/` follows the same internal layout
+(see [architecture/04-lld.md](architecture/04-lld.md) for the exact
+module contents per service):
+
+```
+services/<name>/
+├── app/
+│   ├── api/          # route handlers — one module per resource, internal/* routes clearly separated
+│   ├── core/           # settings, startup/shutdown, dependency wiring
+│   ├── models/            # pydantic request/response schemas
+│   ├── db/                  # SQLAlchemy models & queries, scoped to this service's own schema only
+│   ├── clients/                # breaker-wrapped httpx clients for outbound calls
+│   └── services/                  # business logic — never inline in route handlers
+├── tests/
+│   ├── unit/
+│   └── integration/
+├── Dockerfile
+├── pyproject.toml
+└── README.md
+```
+
+Agents under `agents/<name>/` follow the parallel layout in
+[architecture/04-lld.md](architecture/04-lld.md): `agent.py` (main loop),
+a schema module for structured LLM output, and a `db.py` for the shared
+control-plane tables — never a direct write to a business service's schema.
+
+## Python Conventions
+
+- Target Python 3.12+, use built-in generics (`list[str]`, not `List[str]`).
+- All I/O is `async`/`await` — no blocking calls inside FastAPI handlers or
+  agent loops.
+- Type-hint every function signature; no bare `Any` unless interfacing with
+  an untyped third-party return value.
+- Use Pydantic v2 models for every request/response and every inter-service
+  or event message — never pass raw dicts across a boundary.
+- No bare `except:` — catch specific exceptions and handle them explicitly.
+- One module = one responsibility (`api/` vs `services/` vs `db/`).
+- Formatting/linting is `ruff` + `black`; no manual style debates.
+
+## API Design Rules
+
+- REST resources are nouns, plural: `/payments`, `/users`, `/notifications`.
+- Every mutating endpoint with financial side effects requires an
+  `Idempotency-Key` header (see [api/api-contracts.md](api/api-contracts.md)).
+- Responses use the shared envelope: `{ "data": ..., "error": null }` on
+  success, `{ "data": null, "error": { "code", "message" } }` on failure —
+  error codes are the shared vocabulary in `api-contracts.md`.
+- `4xx` for client/validation errors, `5xx` only for genuine server/
+  dependency failures.
+- Every service exposes `GET /health` and `GET /ready`.
+- `/internal/*` routes are never proxied by the Gateway — reachable only on
+  the internal network, and only by the caller identity that owns that
+  relationship (see [architecture/03-service-boundaries.md](architecture/03-service-boundaries.md)).
+- Every inter-service call goes through the shared circuit breaker helper
+  in `shared/` — no raw, unguarded `httpx` calls to another service.
+
+## Agent Code Rules
+
+- Agents never write directly to another service's database or call a
+  payment provider — they call HTTP endpoints owned by the relevant
+  service, or (for infrastructure actions) the Ops Controller only.
+- Every LLM call produces a structured decision object (Pydantic model),
+  never free text acted on directly. A non-LLM validator checks the
+  decision against the action allowlist before anything executes — see
+  [ADR-0005](decisions/ADR-0005-llm-actions-via-allowlisted-executor.md).
+- Every agent action — accepted, rejected, or executed — is logged with
+  the triggering telemetry, the decision, and the outcome, in the shared
+  `agent_decisions` table.
+- Agent loops are idempotent: re-observing the same state twice must not
+  double-apply an action.
+- Polling intervals and thresholds live in each agent's `config.py`, never
+  hardcoded inline.
+
+## Git Commit Conventions
+
+[Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <short summary>
+```
+
+- **Types:** `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `perf`
+- **Scope:** the service/agent name (`gateway`, `payment`, `fraud`, `user`,
+  `notification`, `monitor`, `healer`, `ops-controller`, `shared`), or
+  `repo` for cross-cutting changes.
+- Imperative mood, lowercase, no trailing period.
+- One logical change per commit; a roadmap phase may span several commits.
+- Work happens on feature branches against a protected `main`, merged via
+  pull request (Phase 12 wires up CI checks on the PR).
+
+## Docker Standards
+
+- Every service/agent has its own multi-stage `Dockerfile`
+  (`python:3.12-slim` base): a `builder` stage installs deps, the final
+  stage copies only the app + venv.
+- No `latest` tags in `docker-compose.yml` — pin Redis, PostgreSQL, Jaeger,
+  and OTel Collector to explicit versions.
+- Every container runs as a **non-root user** and defines a `HEALTHCHECK`
+  (or Compose `healthcheck:` block).
+- The Ops Controller container is the *only* container granted access to
+  the Docker socket/compose control needed for `restart-service` — no
+  other service or agent container has that mount.
+- Secrets are injected via environment variables from `.env`, never baked
+  into an image layer.
