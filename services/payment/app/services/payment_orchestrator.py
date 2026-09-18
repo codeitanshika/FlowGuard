@@ -8,10 +8,11 @@ from app.clients.fraud_client import FraudClient
 from app.clients.provider_client import PaymentProvider
 from app.clients.user_client import UserClient
 from app.db import repository
-from app.db.models import Transaction, TransactionStatus
+from app.db.models import IdempotencyKey, Transaction, TransactionStatus
 from app.models.schemas import PaymentRequest, PaymentResponse
 from shared.errors import ConflictError
 from shared.events import Channels, RedisEventBus
+from shared.idempotency import IdempotencyLock
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,11 +32,13 @@ class PaymentOrchestrator:
         user_client: UserClient,
         provider: PaymentProvider,
         event_bus: RedisEventBus,
+        idempotency_lock: IdempotencyLock,
     ) -> None:
         self._fraud_client = fraud_client
         self._user_client = user_client
         self._provider = provider
         self._event_bus = event_bus
+        self._idempotency_lock = idempotency_lock
 
     async def create_payment(
         self, db: AsyncSession, payload: PaymentRequest, idempotency_key: str, trace_id: str
@@ -44,11 +47,32 @@ class PaymentOrchestrator:
 
         existing = await repository.get_idempotency_key(db, idempotency_key)
         if existing is not None:
-            if existing.request_hash != request_hash:
-                raise ConflictError("idempotency key already used with a different request body")
-            logger.info("payment.idempotent_replay", idempotency_key=idempotency_key)
-            return PaymentResponse(**existing.response_snapshot)
+            return _replay(existing, request_hash, idempotency_key)
 
+        if not await self._idempotency_lock.acquire(idempotency_key):
+            raise ConflictError(
+                "a request with this idempotency key is already being processed, retry shortly"
+            )
+
+        try:
+            # Double-checked: another request may have finished and released
+            # the lock between our first check above and acquiring it here.
+            existing = await repository.get_idempotency_key(db, idempotency_key)
+            if existing is not None:
+                return _replay(existing, request_hash, idempotency_key)
+
+            return await self._process_payment(db, payload, idempotency_key, request_hash, trace_id)
+        finally:
+            await self._idempotency_lock.release(idempotency_key)
+
+    async def _process_payment(
+        self,
+        db: AsyncSession,
+        payload: PaymentRequest,
+        idempotency_key: str,
+        request_hash: str,
+        trace_id: str,
+    ) -> PaymentResponse:
         transaction = await repository.create_transaction(
             db,
             user_id=payload.user_id,
@@ -137,6 +161,13 @@ class PaymentOrchestrator:
                 "timestamp": _now_iso(),
             },
         )
+
+
+def _replay(existing: IdempotencyKey, request_hash: str, idempotency_key: str) -> PaymentResponse:
+    if existing.request_hash != request_hash:
+        raise ConflictError("idempotency key already used with a different request body")
+    logger.info("payment.idempotent_replay", idempotency_key=idempotency_key)
+    return PaymentResponse(**existing.response_snapshot)
 
 
 def _hash_request(payload: PaymentRequest) -> str:
