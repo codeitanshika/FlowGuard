@@ -6,7 +6,9 @@ running) — this document is the source of truth those implementations
 must match, not a replacement for it. Updated after Phase 1 to reflect
 two corrections found while implementing: `PaymentRequest` dropped the
 unused `provider` field (see note below), and User Service gained a
-`/credit` endpoint that Phase 0 hadn't anticipated needing.
+`/credit` endpoint that Phase 0 hadn't anticipated needing. Updated
+again after Phase 2: the Gateway's JWT auth, scope-based authorization,
+and rate limiting are now real (see below), not just placeholders.
 
 Every endpoint, on every service, additionally exposes:
 - `GET /health` — liveness (process is up)
@@ -24,12 +26,27 @@ every downstream call and into every event payload.
 
 ## API Gateway (external-facing)
 
-| Method | Path | Auth | Purpose |
-|---|---|---|---|
-| POST | `/auth/login` | none | issue a JWT for a test client/merchant |
-| * | `/api/v1/payments/*` | JWT | proxied to Payment Service |
-| * | `/api/v1/users/*` | JWT | proxied to User Service |
-| * | `/api/v1/notifications/*` | JWT | proxied to Notification Service |
+| Method | Path | Auth | Required scope | Purpose |
+|---|---|---|---|---|
+| POST | `/auth/login` | none (IP rate-limited) | — | issue a JWT for a test client/merchant |
+| GET/POST/PATCH | `/api/v1/payments/*` | JWT | `payments:read` / `payments:write` | proxied to Payment Service |
+| GET/POST/PATCH | `/api/v1/users/*` | JWT | `users:read` / `users:write` | proxied to User Service |
+| GET | `/api/v1/notifications/*` | JWT | `notifications:read` | proxied to Notification Service |
+
+`POST /auth/login` — `{client_id, client_secret}` → `{access_token,
+token_type: "bearer", expires_in}`. Implemented as of Phase 2:
+credentials are bcrypt-hashed and configured via `GATEWAY_CLIENTS` (see
+[ADR-0010](../decisions/ADR-0010-static-client-credentials.md)), rate
+limited per caller IP.
+
+Required scope is derived per-request from method (`GET`→`read`,
+everything else→`write`) and the first path segment after `/api/v1/`
+(see `services/gateway/app/api/authorization.py`) — a token missing the
+required scope gets 403 `FORBIDDEN` even though it authenticated fine.
+Every proxied request is additionally rate-limited per client
+(`GATEWAY_RATE_LIMIT_PER_MINUTE`, default 100/min) — see
+[docs/security/README.md](../security/README.md) and
+[ADR-0009](../decisions/ADR-0009-fixed-window-rate-limiting.md).
 
 Internal-only endpoints (`/internal/*`) on any service are **never** routed
 by the Gateway — they are reachable only on the internal Docker network, by

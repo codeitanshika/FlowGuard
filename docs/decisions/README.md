@@ -14,3 +14,5 @@ the order they were made; a superseded ADR is marked, never deleted.
 | [0006](ADR-0006-database-per-service.md) | Database-per-service (logical) even on one PostgreSQL instance |
 | [0007](ADR-0007-deterministic-first-fraud-with-llm-narrative.md) | Deterministic-first fraud scoring; LLM supplies narrative, not the decision |
 | [0008](ADR-0008-gateway-centralized-authn-authz.md) | Centralize authn/authz at the API Gateway |
+| [0009](ADR-0009-fixed-window-rate-limiting.md) | Fixed-window rate limiting over sliding-window/token-bucket |
+| [0010](ADR-0010-static-client-credentials.md) | API client credentials are static config, not a database |

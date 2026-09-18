@@ -11,8 +11,8 @@ see the working style in [architecture/README.md](architecture/README.md).
 | Phase | Goal | Status |
 |---|---|---|
 | 0 | System design: requirements, HLD/LLD, service boundaries, schemas, event flows, failure scenarios, ADRs | ✅ Done — see [architecture/](architecture/) and [decisions/](decisions/) |
-| 1 | Core microservices: Gateway, Payment, User, Fraud, Notification — real API contracts, persistence, health endpoints | Planned |
-| 2 | API Gateway security: JWT auth, authorization, rate limiting, idempotency keys, request/trace IDs | Planned |
+| 1 | Core microservices: Gateway, Payment, User, Fraud, Notification — real API contracts, persistence, health endpoints | ✅ Done |
+| 2 | API Gateway security: JWT auth, authorization, rate limiting, idempotency keys, request/trace IDs | ✅ Done |
 | 3 | Docker + local infra: Dockerfiles, `docker-compose.yml`, Postgres, Redis, Jaeger, health checks, non-root containers | Planned |
 | 4 | Observability: OpenTelemetry across all services, traces exported to Jaeger | Planned |
 | 5 | Resilience: circuit breaker (CLOSED→OPEN→HALF_OPEN→CLOSED) in Redis, timeouts, retries, backoff, idempotency | Planned |
