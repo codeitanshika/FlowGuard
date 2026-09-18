@@ -1,11 +1,15 @@
 import uuid
 
 import httpx
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 
-from shared.errors import DependencyUnavailableError, NotFoundError
+from app.api.authorization import check_scope, required_scope
+from app.api.security_deps import enforce_rate_limit
+from app.models.schemas import AuthenticatedClient
+from shared.errors import DependencyUnavailableError, NotFoundError, ValidationAppError
 
 _HOP_BY_HOP_HEADERS = {"host", "content-length", "connection"}
+_BODY_METHODS = {"POST", "PATCH", "PUT"}
 
 
 def build_proxy_router(route_table: dict[str, str]) -> APIRouter:
@@ -15,18 +19,31 @@ def build_proxy_router(route_table: dict[str, str]) -> APIRouter:
         "/api/v1/{full_path:path}",
         methods=["GET", "POST", "PATCH", "DELETE", "PUT"],
     )
-    async def proxy(full_path: str, request: Request) -> Response:
+    async def proxy(
+        full_path: str,
+        request: Request,
+        client: AuthenticatedClient = Depends(enforce_rate_limit),
+    ) -> Response:
         target_base = _resolve_base_url(full_path, route_table)
-        trace_id = request.headers.get("X-Trace-Id", str(uuid.uuid4()))
 
+        resource = full_path.split("/", 1)[0]
+        check_scope(client.scopes, required_scope(request.method, resource))
+
+        if request.method in _BODY_METHODS:
+            content_type = request.headers.get("content-type", "")
+            if not content_type.startswith("application/json"):
+                raise ValidationAppError("request body must be application/json")
+
+        trace_id = request.headers.get("X-Trace-Id", str(uuid.uuid4()))
         headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS}
         headers["X-Trace-Id"] = trace_id
+        headers["X-Client-Id"] = client.client_id
 
         body = await request.body()
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                upstream = await client.request(
+            async with httpx.AsyncClient(timeout=10.0) as http_client:
+                upstream = await http_client.request(
                     request.method,
                     f"{target_base}/{full_path}",
                     params=list(request.query_params.multi_items()),
