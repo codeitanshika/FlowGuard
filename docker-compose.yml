@@ -1,0 +1,156 @@
+# The full containerized stack — every application service plus
+# Postgres, Redis, and Jaeger. Start everything with:
+#
+#   docker compose up --build
+#
+# Distinct from infra/docker/docker-compose.dev.yml (Postgres+Redis
+# only, for running services directly on the host with `python -m
+# uvicorn` during fast local iteration — see docs/deployment/setup-guide.md).
+# Don't run both at once: they'd fight over the same host ports.
+#
+# Secrets (JWT_SECRET, GATEWAY_CLIENTS, ANTHROPIC_API_KEY, ...) load from
+# .env via env_file: below. Service URLs and database URLs are
+# overridden per-service in each `environment:` block to point at
+# container DNS names (e.g. http://fraud:8002) instead of the
+# localhost:PORT values .env uses for host-based dev — those are
+# structural facts about this compose network, not secrets, so they live
+# here rather than duplicated into a second env file.
+
+services:
+  postgres:
+    image: postgres:16.4
+    environment:
+      POSTGRES_USER: flowguard
+      POSTGRES_PASSWORD: flowguard
+      POSTGRES_DB: flowguard
+    volumes:
+      - ./infra/docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - flowguard_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # Not published to the host by default — every service reaches it as
+    # `postgres:5432` over the compose network. Uncomment for direct
+    # psql/GUI-client access from the host:
+    # ports:
+    #   - "5432:5432"
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # ports:
+    #   - "6379:6379"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC — nothing sends to this yet, wired up in Phase 4
+      - "4318:4318"   # OTLP HTTP
+
+  user:
+    build:
+      context: .
+      dockerfile: services/user/Dockerfile
+    env_file: .env
+    environment:
+      USER_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_user
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8003:8003"
+
+  fraud:
+    build:
+      context: .
+      dockerfile: services/fraud/Dockerfile
+    env_file: .env
+    environment:
+      FRAUD_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_fraud
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+
+  notification:
+    build:
+      context: .
+      dockerfile: services/notification/Dockerfile
+    env_file: .env
+    environment:
+      NOTIFICATION_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_notification
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8004:8004"
+
+  payment:
+    build:
+      context: .
+      dockerfile: services/payment/Dockerfile
+    env_file: .env
+    environment:
+      PAYMENT_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_payment
+      REDIS_URL: redis://redis:6379/0
+      PAYMENT_FRAUD_SERVICE_URL: http://fraud:8002
+      PAYMENT_USER_SERVICE_URL: http://user:8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fraud:
+        condition: service_healthy
+      user:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      GATEWAY_PAYMENT_SERVICE_URL: http://payment:8001
+      GATEWAY_USER_SERVICE_URL: http://user:8003
+      GATEWAY_NOTIFICATION_SERVICE_URL: http://notification:8004
+      # Compose interpolates $VAR in *every* value it reads, including
+      # ones sourced from env_file — the bcrypt hashes in .env's
+      # GATEWAY_CLIENTS (format $2b$12$...) get silently mangled that way
+      # (found by testing: login returned "Invalid salt" from inside the
+      # container even though the exact same .env value works for
+      # host-based dev, where pydantic-settings reads .env directly with
+      # no interpolation). This override, with every literal $ doubled,
+      # is Compose's own documented escape for "no, I mean a literal $" —
+      # it takes precedence over the corrupted env_file-sourced value.
+      # Keep this in sync with GATEWAY_CLIENTS in .env / .env.example by
+      # hand; there's no automated check for that today.
+      GATEWAY_CLIENTS: '{"test-merchant":{"secret_hash":"$$2b$$12$$Rjanc7SSPgUoUIs5x5VtjOATONnBafei1e9q3npfe3fxk79PAIvfy","scopes":["payments:read","payments:write","users:read","users:write","notifications:read"]},"readonly-client":{"secret_hash":"$$2b$$12$$loqBFuuDkVw.O4AUcDPVtOfOFLPLFLkyEv4Y/pDwONe/CKQNb4Ldm","scopes":["payments:read","users:read","notifications:read"]}}'
+    depends_on:
+      redis:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+      user:
+        condition: service_healthy
+      notification:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  flowguard_pg_data:
