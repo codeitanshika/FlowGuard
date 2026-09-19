@@ -1,56 +1,81 @@
 # FlowGuard — Local Setup Guide
 
 Supersedes the old `SETUP_GUIDE.md` (now in
-[../archive/SETUP_GUIDE.md](../archive/SETUP_GUIDE.md)), moved here since
-"how to bring the system up" is a deployment concern — local Docker
-Compose today, cloud in Phase 13. This guide will be updated as each
-phase adds real infrastructure; right now (post-Phase 0) it describes the
-target end state so Phase 1–3 have something concrete to build toward.
+[../archive/SETUP_GUIDE.md](../archive/SETUP_GUIDE.md)). As of Phase 3,
+the two workflows below are both real and tested — pick whichever suits
+what you're doing.
 
 ## Prerequisites
 
 - Docker and Docker Compose (v2+)
-- Python 3.12+ (for running scripts/tests outside containers)
-- `uv` or `pip` for local dependency management
+- Python 3.12+ and a virtualenv tool, only needed for Workflow B (running
+  services directly on the host)
 - An account with the chosen payment provider sandbox (provider selected
   in Phase 10 — PayPal, Razorpay, or Stripe; kept behind an abstraction so
   this section will be filled in with concrete steps once that decision is
   made)
-- An Anthropic API key (for the Healer and Fraud agents)
+- An Anthropic API key (for the Healer and Fraud agents, from Phase 8/9)
 
 ## Environment Variables Explained
 
-Copy `.env.example` to `.env` and fill in:
+Copy `.env.example` to `.env` and fill in what's needed for the phases
+you're running. Two things worth knowing before you do:
 
-| Variable | Purpose |
-|---|---|
-| `ANTHROPIC_API_KEY` | Used by the Healer and Fraud agents for diagnosis/narrative reasoning |
-| `POSTGRES_URL` | Base connection string; each service connects using its own least-privilege credential into its own schema (see [../architecture/05-database-schema.md](../architecture/05-database-schema.md)) |
-| `REDIS_URL` | Event bus, circuit breaker state, rate limits, velocity windows |
-| `JWT_SECRET` | Gateway-only — signs/verifies issued tokens (Phase 2) |
-| `<PROVIDER>_CLIENT_ID` / `<PROVIDER>_CLIENT_SECRET` | Sandbox credentials for whichever provider is integrated in Phase 10 |
-| `OPS_CONTROLLER_TOKEN` | The one internal token accepted by the Ops Controller, scoped to the Healer Agent (see [ADR-0005](../decisions/ADR-0005-llm-actions-via-allowlisted-executor.md)) |
+- Each service has its **own** database URL (`USER_DATABASE_URL`,
+  `PAYMENT_DATABASE_URL`, ...) and, where relevant, its own downstream
+  service URLs (`PAYMENT_FRAUD_SERVICE_URL`, `GATEWAY_PAYMENT_SERVICE_URL`,
+  ...) — see [../architecture/05-database-schema.md](../architecture/05-database-schema.md)
+  for why each service owns its own database. The values in
+  `.env.example` point at `localhost:<port>`, correct for Workflow B; the
+  Docker workflow (A) overrides these to container DNS names — see below.
+- `GATEWAY_CLIENTS` holds bcrypt-hashed test credentials as a JSON
+  string. If you regenerate it, read the comment directly above that
+  line in `.env.example` first — Docker Compose interpolates `$` in
+  values it reads, including from `.env`, which mangles a bcrypt hash's
+  `$2b$12$...` format unless escaped. This is documented in
+  `docker-compose.yml` too, at the `GATEWAY_CLIENTS` override.
 
 Never commit `.env` — it's covered by `.gitignore`.
 
-## Docker Compose Startup (target, Phase 3)
+## Workflow A — Full Docker Compose (the whole system, containerized)
 
 ```bash
 docker compose up --build
 ```
 
-Startup order by dependency:
+Brings up, in dependency order (via `depends_on` +
+`condition: service_healthy`): `postgres`, `redis`, `jaeger` → `user`,
+`fraud`, `notification` → `payment` → `gateway`. Each service's own
+`Dockerfile` builds a non-root, multi-stage image; `docker-compose.yml`
+overrides database/service URLs to container DNS names (`postgres`,
+`redis`, `fraud`, `user`, ...) so the same `.env` secrets work whether
+you're running this or Workflow B.
 
-1. `postgres`, `redis` (infrastructure)
-2. `otel-collector`, `jaeger`
-3. `user`, `fraud`, `payment`, `notification` (business services)
-4. `gateway` (routes to the above)
-5. `ops-controller` (internal-only, no external port)
-6. `monitor`, `healer`, `fraud-agent` (control plane)
+Not yet in `docker-compose.yml` (later phases): `monitor`, `healer`,
+`fraud-agent` (Phase 7–9), an `ops-controller` service (Phase 8).
+
+## Workflow B — Services on the Host, Infra in Docker
+
+Faster iteration (no image rebuild per code change) at the cost of only
+Postgres/Redis being containerized:
+
+```bash
+docker compose -f infra/docker/docker-compose.dev.yml up -d
+python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt   # .venv\Scripts\pip on Windows
+python -m uvicorn app.main:app --app-dir services/user --port 8003
+python -m uvicorn app.main:app --app-dir services/fraud --port 8002
+python -m uvicorn app.main:app --app-dir services/notification --port 8004
+python -m uvicorn app.main:app --app-dir services/payment --port 8001
+python -m uvicorn app.main:app --app-dir services/gateway --port 8000
+```
+
+**Don't run A and B at the same time** — both publish the same host
+ports (8000–8004, and A's Postgres/Redis would collide with B's if both
+happened to publish 5432/6379).
 
 ## Verifying All Services Healthy
 
-Once Phase 1/3 land, every service will answer:
+Same for either workflow:
 
 ```bash
 curl http://localhost:8000/health   # gateway
@@ -60,8 +85,35 @@ curl http://localhost:8003/health   # user
 curl http://localhost:8004/health   # notification
 ```
 
+Workflow A additionally shows container-level health:
+
 ```bash
 docker compose ps   # every service should show "healthy", not just "running"
+```
+
+## A Full Request, End to End
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"client_id":"test-merchant","client_secret":"test-secret-123"}' \
+  | python -c "import json,sys; print(json.load(sys.stdin)['data']['access_token'])")
+
+USER_ID=$(curl -s -X POST http://localhost:8000/api/v1/users \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"email":"you@example.com","full_name":"You","currency":"USD"}' \
+  | python -c "import json,sys; print(json.load(sys.stdin)['data']['id'])")
+
+# No public deposit endpoint exists yet (see PROJECT_OVERVIEW.md) — seed
+# a balance directly via User Service's internal endpoint for testing:
+curl -s -X POST "http://localhost:8003/internal/users/$USER_ID/credit" \
+  -H "Content-Type: application/json" \
+  -d '{"amount":"100.00","currency":"USD","transaction_id":"00000000-0000-0000-0000-000000000001"}'
+
+curl -s -X POST http://localhost:8000/api/v1/payments \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: my-first-payment" \
+  -d "{\"user_id\":\"$USER_ID\",\"amount\":\"10.00\",\"currency\":\"USD\"}"
 ```
 
 ## Running Fault Injection (target, Phase 6)
@@ -80,7 +132,11 @@ the fault expires, the breaker's half-open probe succeeds and it closes →
 [../architecture/06-event-flows.md](../architecture/06-event-flows.md)
 for the full sequence.
 
-## Viewing Traces in Jaeger (target, Phase 4)
+## Viewing Traces in Jaeger (partially available now, full wiring in Phase 4)
+
+`docker compose up` already starts Jaeger — its UI is live at
+`http://localhost:16686` — but no service exports spans to it yet
+(that's Phase 4's OpenTelemetry instrumentation). Once wired up:
 
 1. Open `http://localhost:16686`.
 2. Select a service (e.g. `payment-service`) and click **Find Traces**.
