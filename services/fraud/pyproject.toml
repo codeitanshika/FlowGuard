@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "flowguard-fraud"
 version = "0.1.0"
@@ -11,3 +15,8 @@ dependencies = [
     "pydantic-settings>=2.3",
     "structlog>=24.1",
 ]
+
+# Dependencies-only manifest — see services/user/pyproject.toml for why
+# packages = [].
+[tool.setuptools]
+packages = []
