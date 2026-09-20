@@ -51,8 +51,8 @@ services:
     image: jaegertracing/all-in-one:1.62.0
     ports:
       - "16686:16686" # UI
-      - "4317:4317"   # OTLP gRPC — nothing sends to this yet, wired up in Phase 4
-      - "4318:4318"   # OTLP HTTP
+      - "4317:4317"   # OTLP gRPC (unused — every service exports over HTTP, see ADR-0011)
+      - "4318:4318"   # OTLP HTTP — every service's OTEL_EXPORTER_OTLP_ENDPOINT below
 
   user:
     build:
@@ -61,9 +61,12 @@ services:
     env_file: .env
     environment:
       USER_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_user
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       postgres:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "8003:8003"
 
@@ -74,9 +77,12 @@ services:
     env_file: .env
     environment:
       FRAUD_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_fraud
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       postgres:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "8002:8002"
 
@@ -88,11 +94,14 @@ services:
     environment:
       NOTIFICATION_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_notification
       REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "8004:8004"
 
@@ -106,6 +115,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       PAYMENT_FRAUD_SERVICE_URL: http://fraud:8002
       PAYMENT_USER_SERVICE_URL: http://user:8003
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       postgres:
         condition: service_healthy
@@ -115,6 +125,8 @@ services:
         condition: service_healthy
       user:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "8001:8001"
 
@@ -128,6 +140,7 @@ services:
       GATEWAY_PAYMENT_SERVICE_URL: http://payment:8001
       GATEWAY_USER_SERVICE_URL: http://user:8003
       GATEWAY_NOTIFICATION_SERVICE_URL: http://notification:8004
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       # Compose interpolates $VAR in *every* value it reads, including
       # ones sourced from env_file — the bcrypt hashes in .env's
       # GATEWAY_CLIENTS (format $2b$12$...) get silently mangled that way
@@ -156,6 +169,8 @@ services:
         condition: service_healthy
       notification:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "8000:8000"
 

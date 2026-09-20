@@ -1,8 +1,8 @@
-# Development-only infrastructure: Postgres + Redis, nothing else.
-# Phase 3 replaces/extends this with the full docker-compose.yml at the
-# repo root that also containerizes every application service. Until
-# then, run this for local Postgres/Redis and run the Python services
-# directly (see docs/deployment/setup-guide.md).
+# Development-only infrastructure: Postgres + Redis + Jaeger, nothing
+# else. The full docker-compose.yml at the repo root also containerizes
+# every application service — use this one for local Postgres/Redis/
+# Jaeger while running the Python services directly (see
+# docs/deployment/setup-guide.md, Workflow B).
 #
 # Usage: docker compose -f infra/docker/docker-compose.dev.yml up -d
 
@@ -33,6 +33,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC (unused — see ADR-0011)
+      - "4318:4318"   # OTLP HTTP — host-based services point OTEL_EXPORTER_OTLP_ENDPOINT here
 
 volumes:
   flowguard_pg_data:
