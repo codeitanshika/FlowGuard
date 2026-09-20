@@ -1,11 +1,16 @@
 import json
 
+import structlog
+from opentelemetry import trace
+
 from app.db.session import SessionLocal
 from app.services import dispatcher
 from shared.events import Channels, RedisEventBus
 from shared.logging import get_logger
+from shared.telemetry import current_trace_id, extract_context
 
 logger = get_logger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 async def run_consumer(bus: RedisEventBus) -> None:
@@ -18,6 +23,15 @@ async def run_consumer(bus: RedisEventBus) -> None:
     — redis-py's own recommended pattern for async consumers, and the one
     that's easiest to reason about: a bounded-timeout poll that naturally
     loops, versus a single indefinite blocking read.
+
+    Trace propagation: Redis pub/sub is the one hop in this system OTel's
+    HTTP auto-instrumentation can't see across — a published event is just
+    a string, not a request. The publisher (Payment) injects a
+    `traceparent` into the event payload; extract_context reads it back
+    out here and start_as_current_span(context=...) uses it as the
+    parent, so this event's processing shows up as a child span in the
+    *same* trace as the HTTP request that originally created it, rather
+    than starting an unrelated trace of its own.
 
     Note for anyone debugging a "messages published but never consumed"
     symptom here: check for a logger call passing `event=` as a kwarg
@@ -47,8 +61,13 @@ async def run_consumer(bus: RedisEventBus) -> None:
             continue
 
         event_type = payload.get("event", "unknown")
-        try:
-            async with SessionLocal() as db:
-                await dispatcher.dispatch(db, event_type, payload)
-        except Exception as exc:  # noqa: BLE001 - consumer loop must never die
-            logger.error("event.processing_failed", event_type=event_type, error=str(exc))
+        parent_context = extract_context(payload)
+
+        with tracer.start_as_current_span(f"notification.consume.{event_type}", context=parent_context):
+            structlog.contextvars.clear_contextvars()
+            structlog.contextvars.bind_contextvars(trace_id=current_trace_id(), service="notification")
+            try:
+                async with SessionLocal() as db:
+                    await dispatcher.dispatch(db, event_type, payload)
+            except Exception as exc:  # noqa: BLE001 - consumer loop must never die
+                logger.error("event.processing_failed", event_type=event_type, error=str(exc))
