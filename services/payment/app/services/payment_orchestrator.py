@@ -1,6 +1,7 @@
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,7 @@ from shared.errors import ConflictError
 from shared.events import Channels, RedisEventBus
 from shared.idempotency import IdempotencyLock
 from shared.logging import get_logger
+from shared.telemetry import current_trace_id, inject_context
 
 logger = get_logger(__name__)
 
@@ -24,7 +26,13 @@ class PaymentOrchestrator:
     """The transaction state machine. Owns the sequence
     risk-check -> debit -> provider-capture and the compensating action
     (credit back) if capture fails after the debit already succeeded —
-    see the Phase 1 write-up on why that compensation exists."""
+    see the Phase 1 write-up on why that compensation exists.
+
+    trace_id is no longer threaded in from the route handler (Phase 1-3
+    had it come from an X-Trace-Id header) — Phase 4 derives it directly
+    from the active OpenTelemetry span, which is the actual source of
+    truth now that FastAPI/httpx auto-instrumentation handles real trace
+    propagation on every HTTP hop this service makes or receives."""
 
     def __init__(
         self,
@@ -41,7 +49,7 @@ class PaymentOrchestrator:
         self._idempotency_lock = idempotency_lock
 
     async def create_payment(
-        self, db: AsyncSession, payload: PaymentRequest, idempotency_key: str, trace_id: str
+        self, db: AsyncSession, payload: PaymentRequest, idempotency_key: str
     ) -> PaymentResponse:
         request_hash = _hash_request(payload)
 
@@ -61,7 +69,7 @@ class PaymentOrchestrator:
             if existing is not None:
                 return _replay(existing, request_hash, idempotency_key)
 
-            return await self._process_payment(db, payload, idempotency_key, request_hash, trace_id)
+            return await self._process_payment(db, payload, idempotency_key, request_hash)
         finally:
             await self._idempotency_lock.release(idempotency_key)
 
@@ -71,7 +79,6 @@ class PaymentOrchestrator:
         payload: PaymentRequest,
         idempotency_key: str,
         request_hash: str,
-        trace_id: str,
     ) -> PaymentResponse:
         transaction = await repository.create_transaction(
             db,
@@ -84,15 +91,13 @@ class PaymentOrchestrator:
 
         await self._event_bus.publish(
             Channels.PAYMENT_CREATED,
-            {
-                "event": Channels.PAYMENT_CREATED,
-                "transaction_id": str(transaction.id),
-                "user_id": str(transaction.user_id),
-                "amount": str(transaction.amount),
-                "currency": transaction.currency,
-                "trace_id": trace_id,
-                "timestamp": _now_iso(),
-            },
+            _event_payload(
+                Channels.PAYMENT_CREATED,
+                transaction_id=str(transaction.id),
+                user_id=str(transaction.user_id),
+                amount=str(transaction.amount),
+                currency=transaction.currency,
+            ),
         )
 
         debited = False
@@ -102,7 +107,7 @@ class PaymentOrchestrator:
                 transaction.user_id, transaction.amount, transaction.currency, transaction.id
             )
             debited = True
-            transaction = await self._capture_with_provider(db, transaction, trace_id)
+            transaction = await self._capture_with_provider(db, transaction)
         except ConflictError as exc:
             if debited:
                 logger.warning("payment.compensating_debit", transaction_id=str(transaction.id))
@@ -110,7 +115,7 @@ class PaymentOrchestrator:
                     transaction.user_id, transaction.amount, transaction.currency, transaction.id
                 )
             transaction = await repository.mark_failed(db, transaction, str(exc))
-            await self._publish_outcome(transaction, trace_id)
+            await self._publish_outcome(transaction)
 
         response = PaymentResponse.model_validate(transaction)
         await repository.save_idempotency_key(
@@ -131,18 +136,16 @@ class PaymentOrchestrator:
         if result.risk_level == "high":
             raise ConflictError(f"transaction blocked by fraud check: {result.rationale}")
 
-    async def _capture_with_provider(
-        self, db: AsyncSession, transaction: Transaction, trace_id: str
-    ) -> Transaction:
+    async def _capture_with_provider(self, db: AsyncSession, transaction: Transaction) -> Transaction:
         transaction = await repository.set_status(db, transaction, TransactionStatus.provider_pending)
         result = await self._provider.capture(transaction.id, transaction.amount, transaction.currency)
         if not result.success:
             raise ConflictError(result.failure_reason or "provider declined the payment")
         transaction = await repository.mark_completed(db, transaction, result.provider_reference)
-        await self._publish_outcome(transaction, trace_id)
+        await self._publish_outcome(transaction)
         return transaction
 
-    async def _publish_outcome(self, transaction: Transaction, trace_id: str) -> None:
+    async def _publish_outcome(self, transaction: Transaction) -> None:
         channel = (
             Channels.PAYMENT_COMPLETED
             if transaction.status == TransactionStatus.completed
@@ -150,17 +153,32 @@ class PaymentOrchestrator:
         )
         await self._event_bus.publish(
             channel,
-            {
-                "event": channel,
-                "transaction_id": str(transaction.id),
-                "user_id": str(transaction.user_id),
-                "status": transaction.status.value,
-                "provider_reference": transaction.provider_reference,
-                "failure_reason": transaction.failure_reason,
-                "trace_id": trace_id,
-                "timestamp": _now_iso(),
-            },
+            _event_payload(
+                channel,
+                transaction_id=str(transaction.id),
+                user_id=str(transaction.user_id),
+                status=transaction.status.value,
+                provider_reference=transaction.provider_reference,
+                failure_reason=transaction.failure_reason,
+            ),
         )
+
+
+def _event_payload(event: str, **fields: Any) -> dict[str, Any]:
+    """Every published event gets the same base shape: the event name,
+    a human-readable trace_id (handy in logs/API responses/Redis CLI
+    inspection without decoding a traceparent), a timestamp, plus a real
+    `traceparent` (via inject_context) that Notification's consumer
+    extracts to continue this exact trace rather than starting a new
+    one — see event_consumer.py."""
+
+    payload = {
+        "event": event,
+        "trace_id": current_trace_id(),
+        "timestamp": _now_iso(),
+        **fields,
+    }
+    return inject_context(payload)
 
 
 def _replay(existing: IdempotencyKey, request_hash: str, idempotency_key: str) -> PaymentResponse:

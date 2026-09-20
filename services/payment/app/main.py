@@ -11,9 +11,20 @@ from shared.exception_handlers import register_exception_handlers
 from shared.health import build_health_router
 from shared.logging import configure_logging
 from shared.middleware import TraceIdMiddleware
+from shared.telemetry import (
+    configure_tracing,
+    instrument_fastapi,
+    instrument_httpx,
+    instrument_redis,
+    instrument_sqlalchemy,
+)
 
 settings = get_settings()
 configure_logging(settings.service_name, settings.log_level)
+configure_tracing(settings.service_name)
+instrument_sqlalchemy(engine)
+instrument_httpx()
+instrument_redis()
 
 
 @asynccontextmanager
@@ -26,6 +37,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FlowGuard Payment Service", lifespan=lifespan)
+instrument_fastapi(app)
 app.add_middleware(TraceIdMiddleware, service_name=settings.service_name)
 register_exception_handlers(app)
 app.include_router(build_health_router(is_ready))
