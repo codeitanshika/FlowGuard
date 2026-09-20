@@ -14,7 +14,7 @@ see the working style in [architecture/README.md](architecture/README.md).
 | 1 | Core microservices: Gateway, Payment, User, Fraud, Notification — real API contracts, persistence, health endpoints | ✅ Done |
 | 2 | API Gateway security: JWT auth, authorization, rate limiting, idempotency keys, request/trace IDs | ✅ Done |
 | 3 | Docker + local infra: Dockerfiles, `docker-compose.yml`, Postgres, Redis, Jaeger, health checks, non-root containers | ✅ Done |
-| 4 | Observability: OpenTelemetry across all services, traces exported to Jaeger | Planned |
+| 4 | Observability: OpenTelemetry across all services, traces exported to Jaeger | ✅ Done |
 | 5 | Resilience: circuit breaker (CLOSED→OPEN→HALF_OPEN→CLOSED) in Redis, timeouts, retries, backoff, idempotency | Planned |
 | 6 | Fault injection: controlled HTTP 500s, latency, timeouts, provider failures, configurable error rate | Planned |
 | 7 | Monitor Agent: telemetry → error rate / p95 / p99 / throughput → anomaly detection → `anomaly.detected` | Planned |

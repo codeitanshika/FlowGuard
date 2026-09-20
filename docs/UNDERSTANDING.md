@@ -67,7 +67,7 @@ logged attempt. The LLM never gets a shell or a Docker socket; it only
 ever produces data that a fixed piece of ordinary code decides whether to
 act on. See [decisions/ADR-0005](decisions/ADR-0005-llm-actions-via-allowlisted-executor.md).
 
-## What Is OpenTelemetry?
+## What Is OpenTelemetry, and What Does "Propagation" Actually Mean?
 
 When a payment request travels through Gateway → Payment → Fraud →
 Notification, and something goes wrong, you need to know which service was
@@ -77,6 +77,24 @@ timed **spans**, all tagged with a shared trace ID. FlowGuard ships every
 span to Jaeger for humans to browse, and the Monitor Agent watches the same
 structured data to notice things like "Fraud Service's p99 latency just
 tripled."
+
+The part that makes it one *connected* trace instead of five unrelated
+ones is **propagation** — the trace ID has to travel along with the
+request. For the HTTP hops (Gateway calling Payment, Payment calling
+Fraud and User), this happens automatically: FastAPI's and httpx's OTel
+instrumentation read and write a standard `traceparent` header on every
+request/response, so nothing in FlowGuard's own route handlers has to
+know or care. The one hop where this *doesn't* happen for free is
+Payment publishing a `payment.completed` event to Redis for Notification
+to pick up later — a Redis message isn't an HTTP request, so there's no
+header for the instrumentation to touch. FlowGuard handles this by hand:
+Payment writes the trace context into the event's own JSON payload
+before publishing it (`inject_context`), and Notification reads it back
+out when it picks the event up later (`extract_context`), using it as
+the parent for its own span. The result: open any payment's trace in
+Jaeger and you'll see Notification's processing nested under it, even
+though it happened seconds later, in a different process, kicked off by
+a Redis message rather than a request.
 
 ## What Is Redis Pub/Sub?
 

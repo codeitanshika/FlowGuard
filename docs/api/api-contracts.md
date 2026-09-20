@@ -9,6 +9,8 @@ unused `provider` field (see note below), and User Service gained a
 `/credit` endpoint that Phase 0 hadn't anticipated needing. Updated
 again after Phase 2: the Gateway's JWT auth, scope-based authorization,
 and rate limiting are now real (see below), not just placeholders.
+Updated again after Phase 4: `trace_id` is a real OpenTelemetry trace ID,
+not an ad-hoc header FlowGuard's own code generated and forwarded.
 
 Every endpoint, on every service, additionally exposes:
 - `GET /health` — liveness (process is up)
@@ -20,9 +22,16 @@ Every response uses a consistent envelope:
 { "data": null, "error": { "code": "STRING_CODE", "message": "human readable" } }
 ```
 
-Every request/response is correlated by a `trace_id`, propagated from the
-Gateway (generated if not already present on the inbound request) through
-every downstream call and into every event payload.
+Every request/response is correlated by a `trace_id` — the active
+OpenTelemetry span's real trace ID (32 hex chars), the same one Jaeger
+shows for that request. Every response carries it in the `X-Trace-Id`
+header for convenience (paste it into Jaeger's search box). Propagation
+across HTTP hops is automatic (FastAPI/httpx auto-instrumentation reads
+and writes the standard `traceparent` header); across the one non-HTTP
+hop — Payment publishing an event for Notification to consume off Redis
+— it's carried inside the event payload itself and extracted on the
+consuming side. See [docs/UNDERSTANDING.md](../UNDERSTANDING.md)'s
+OpenTelemetry section for the concrete walkthrough.
 
 ## API Gateway (external-facing)
 

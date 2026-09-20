@@ -135,8 +135,9 @@ control-plane tables — never a direct write to a business service's schema.
 - Every service/agent has its own multi-stage `Dockerfile`
   (`python:3.12-slim` base): a `builder` stage installs deps, the final
   stage copies only the app + venv.
-- No `latest` tags in `docker-compose.yml` — pin Redis, PostgreSQL, Jaeger,
-  and OTel Collector to explicit versions.
+- No `latest` tags in `docker-compose.yml` — pin Redis, PostgreSQL, and
+  Jaeger to explicit versions (no separate OTel Collector — see
+  [ADR-0011](decisions/ADR-0011-otlp-direct-to-jaeger.md)).
 - Every container runs as a **non-root user** and defines a `HEALTHCHECK`
   (or Compose `healthcheck:` block).
 - The Ops Controller container is the *only* container granted access to
@@ -144,3 +145,35 @@ control-plane tables — never a direct write to a business service's schema.
   other service or agent container has that mount.
 - Secrets are injected via environment variables from `.env`, never baked
   into an image layer.
+
+## Observability Standards
+
+- Every service calls `configure_tracing(service_name)` and
+  `instrument_fastapi(app)` at startup (`shared/telemetry/setup.py`) —
+  no exceptions, every service is a FastAPI app and every request should
+  produce a trace.
+- Beyond that, only instrument what a service actually uses — a shared
+  module importing an instrumentation package a given service's
+  `pyproject.toml` doesn't declare crashes that service at startup (this
+  happened once: Fraud Service doesn't use httpx, so
+  `shared/telemetry/setup.py`'s per-instrumentor imports are lazy,
+  local to each `instrument_*` function, not top-level).
+
+  | Service | `instrument_httpx()` | `instrument_sqlalchemy()` | `instrument_redis()` |
+  |---|---|---|---|
+  | gateway | yes — proxies every request | no DB | yes — rate limiter |
+  | payment | yes — calls fraud/user/provider | yes | yes — event bus + idempotency lock |
+  | fraud | no outbound calls | yes | no |
+  | user | no outbound calls | yes | no |
+  | notification | no outbound calls | yes | yes — event bus |
+
+- Redis pub/sub is the one hop OTel's auto-instrumentation can't see
+  across (a published event is a string, not an HTTP request). A
+  publisher that wants a consumer's processing linked into the same
+  trace must call `shared.telemetry.inject_context(payload)` before
+  publishing; a consumer that wants to continue that trace must call
+  `shared.telemetry.extract_context(payload)` and pass the result as
+  `context=` to `tracer.start_as_current_span(...)`. See
+  `services/payment/app/services/payment_orchestrator.py` (publish side)
+  and `services/notification/app/consumers/event_consumer.py` (consume
+  side) for the reference implementation.

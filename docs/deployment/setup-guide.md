@@ -132,16 +132,26 @@ the fault expires, the breaker's half-open probe succeeds and it closes →
 [../architecture/06-event-flows.md](../architecture/06-event-flows.md)
 for the full sequence.
 
-## Viewing Traces in Jaeger (partially available now, full wiring in Phase 4)
+## Viewing Traces in Jaeger
 
-`docker compose up` already starts Jaeger — its UI is live at
-`http://localhost:16686` — but no service exports spans to it yet
-(that's Phase 4's OpenTelemetry instrumentation). Once wired up:
+Every service exports spans to Jaeger as of Phase 4. Make the payment
+from "A Full Request, End to End" above (or any request through the
+Gateway), then:
 
 1. Open `http://localhost:16686`.
-2. Select a service (e.g. `payment-service`) and click **Find Traces**.
-3. Open a trace to see the full span tree: Gateway → Payment → Fraud →
-   Notification (and → Provider on the payment leg).
-4. During a fault-injection run, filter by `error=true` and cross-reference
-   the trace ID with the `agent_decisions` audit table to see which
-   Healer decision that trace triggered.
+2. Select a service (e.g. `payment`) and click **Find Traces** — or
+   search directly by the trace ID from the payment response's
+   `X-Trace-Id` header.
+3. Open the trace: you'll see one connected span tree covering
+   `gateway` → `payment` → `fraud` and `user` (synchronous HTTP calls,
+   propagated automatically), plus SQL and Redis spans nested under
+   each service, plus — the interesting one — `notification`'s
+   `notification.consume.payment.completed` span, linked into the same
+   trace even though it ran later, in a different process, kicked off
+   by a Redis message rather than a request. See
+   [../UNDERSTANDING.md](../UNDERSTANDING.md)'s OpenTelemetry section for
+   how that hop specifically gets propagated (it's the one HTTP-based
+   auto-instrumentation can't do for free).
+4. During a fault-injection run (Phase 6), filter by `error=true` and
+   cross-reference the trace ID with the `agent_decisions` audit table
+   to see which Healer decision that trace triggered.

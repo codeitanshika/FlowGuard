@@ -16,3 +16,4 @@ the order they were made; a superseded ADR is marked, never deleted.
 | [0008](ADR-0008-gateway-centralized-authn-authz.md) | Centralize authn/authz at the API Gateway |
 | [0009](ADR-0009-fixed-window-rate-limiting.md) | Fixed-window rate limiting over sliding-window/token-bucket |
 | [0010](ADR-0010-static-client-credentials.md) | API client credentials are static config, not a database |
+| [0011](ADR-0011-otlp-direct-to-jaeger.md) | Services export OTLP directly to Jaeger, no separate Collector |
