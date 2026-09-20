@@ -1,5 +1,3 @@
-import uuid
-
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
 
@@ -34,9 +32,12 @@ def build_proxy_router(route_table: dict[str, str]) -> APIRouter:
             if not content_type.startswith("application/json"):
                 raise ValidationAppError("request body must be application/json")
 
-        trace_id = request.headers.get("X-Trace-Id", str(uuid.uuid4()))
+        # No manual trace-id header here — HTTPXClientInstrumentor injects
+        # a real W3C traceparent into this outgoing request automatically,
+        # based on the span FastAPIInstrumentor already started for the
+        # incoming request. TraceIdMiddleware sets X-Trace-Id on the
+        # response for humans; nothing needs it forwarded to the backend.
         headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS}
-        headers["X-Trace-Id"] = trace_id
         headers["X-Client-Id"] = client.client_id
 
         body = await request.body()
@@ -56,7 +57,6 @@ def build_proxy_router(route_table: dict[str, str]) -> APIRouter:
         return Response(
             content=upstream.content,
             status_code=upstream.status_code,
-            headers={"X-Trace-Id": trace_id},
             media_type=upstream.headers.get("content-type", "application/json"),
         )
 

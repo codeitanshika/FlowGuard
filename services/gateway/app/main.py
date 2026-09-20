@@ -13,9 +13,13 @@ from shared.exception_handlers import register_exception_handlers
 from shared.health import build_health_router
 from shared.logging import configure_logging
 from shared.middleware import TraceIdMiddleware
+from shared.telemetry import configure_tracing, instrument_fastapi, instrument_httpx, instrument_redis
 
 settings = get_settings()
 configure_logging(settings.service_name, settings.log_level)
+configure_tracing(settings.service_name)
+instrument_httpx()
+instrument_redis()
 
 route_table = build_route_table(settings)
 downstream_urls = [
@@ -35,6 +39,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FlowGuard API Gateway", lifespan=lifespan)
+instrument_fastapi(app)
 app.add_middleware(TraceIdMiddleware, service_name=settings.service_name)
 register_exception_handlers(app)
 app.include_router(build_health_router(partial(check_downstream, downstream_urls)))
