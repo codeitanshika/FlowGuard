@@ -3,9 +3,11 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_fault_injector
 from app.db.session import get_db
 from app.models.schemas import BalanceAdjustmentRequest, BalanceResponse, FreezeRequest, UserResponse
 from app.services import user_service
+from shared.fault_injection import FaultInjectionRequest, FaultInjector
 from shared.schemas import Envelope
 
 # Everything under /internal is never routed by the Gateway (see
@@ -44,3 +46,17 @@ async def credit_user(
 ) -> Envelope[BalanceResponse]:
     user = await user_service.credit(db, user_id, payload.amount)
     return Envelope(data=BalanceResponse(balance=user.balance, currency=user.currency))
+
+
+@router.post("/fault-injection", response_model=Envelope[dict])
+async def configure_fault(
+    payload: FaultInjectionRequest, injector: FaultInjector = Depends(get_fault_injector)
+) -> Envelope[dict]:
+    await injector.enable(payload.mode, payload.error_rate, payload.latency_ms, payload.duration_seconds)
+    return Envelope(data={"status": "enabled"})
+
+
+@router.delete("/fault-injection", response_model=Envelope[dict])
+async def clear_fault(injector: FaultInjector = Depends(get_fault_injector)) -> Envelope[dict]:
+    await injector.disable()
+    return Envelope(data={"status": "cleared"})

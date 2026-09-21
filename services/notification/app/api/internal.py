@@ -1,24 +1,12 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_fault_injector
-from app.db.session import get_db
-from app.models.schemas import RiskAssessmentResponse, RiskCheckRequest
-from app.services import fraud_service
 from shared.fault_injection import FaultInjectionRequest, FaultInjector
 from shared.schemas import Envelope
 
+# Never routed by the Gateway (see docs/architecture/03-service-boundaries.md)
+# — reachable only on the internal network.
 router = APIRouter(prefix="/internal", tags=["internal"])
-
-
-@router.post("/risk-check", response_model=Envelope[RiskAssessmentResponse])
-async def risk_check(
-    payload: RiskCheckRequest, db: AsyncSession = Depends(get_db)
-) -> Envelope[RiskAssessmentResponse]:
-    assessment = await fraud_service.run_risk_check(
-        db, payload.transaction_id, payload.user_id, payload.amount
-    )
-    return Envelope(data=RiskAssessmentResponse.model_validate(assessment))
 
 
 @router.post("/fault-injection", response_model=Envelope[dict])
