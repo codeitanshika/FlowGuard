@@ -61,9 +61,12 @@ services:
     env_file: .env
     environment:
       USER_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_user
+      REDIS_URL: redis://redis:6379/0
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       jaeger:
         condition: service_started
@@ -77,9 +80,12 @@ services:
     env_file: .env
     environment:
       FRAUD_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_fraud
+      REDIS_URL: redis://redis:6379/0
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       jaeger:
         condition: service_started
@@ -140,6 +146,7 @@ services:
       GATEWAY_PAYMENT_SERVICE_URL: http://payment:8001
       GATEWAY_USER_SERVICE_URL: http://user:8003
       GATEWAY_NOTIFICATION_SERVICE_URL: http://notification:8004
+      GATEWAY_FRAUD_SERVICE_URL: http://fraud:8002
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       # Compose interpolates $VAR in *every* value it reads, including
       # ones sourced from env_file — the bcrypt hashes in .env's
@@ -159,13 +166,15 @@ services:
       # it read from env_file before this override replaces it. Expected
       # and harmless (confirmed via testing: login works), not a sign
       # this override isn't taking effect.
-      GATEWAY_CLIENTS: '{"test-merchant":{"secret_hash":"$$2b$$12$$Rjanc7SSPgUoUIs5x5VtjOATONnBafei1e9q3npfe3fxk79PAIvfy","scopes":["payments:read","payments:write","users:read","users:write","notifications:read"]},"readonly-client":{"secret_hash":"$$2b$$12$$loqBFuuDkVw.O4AUcDPVtOfOFLPLFLkyEv4Y/pDwONe/CKQNb4Ldm","scopes":["payments:read","users:read","notifications:read"]}}'
+      GATEWAY_CLIENTS: '{"test-merchant":{"secret_hash":"$$2b$$12$$Rjanc7SSPgUoUIs5x5VtjOATONnBafei1e9q3npfe3fxk79PAIvfy","scopes":["payments:read","payments:write","users:read","users:write","notifications:read","debug:write"]},"readonly-client":{"secret_hash":"$$2b$$12$$loqBFuuDkVw.O4AUcDPVtOfOFLPLFLkyEv4Y/pDwONe/CKQNb4Ldm","scopes":["payments:read","users:read","notifications:read"]}}'
     depends_on:
       redis:
         condition: service_healthy
       payment:
         condition: service_healthy
       user:
+        condition: service_healthy
+      fraud:
         condition: service_healthy
       notification:
         condition: service_healthy
