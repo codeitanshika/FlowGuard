@@ -12,7 +12,10 @@ and rate limiting are now real (see below), not just placeholders.
 Updated again after Phase 4: `trace_id` is a real OpenTelemetry trace ID,
 not an ad-hoc header FlowGuard's own code generated and forwarded.
 Updated again after Phase 5: the circuit-breaker endpoints under Payment
-Service are real, not placeholders.
+Service are real, not placeholders. Updated again after Phase 6: every
+service gained an `/internal/fault-injection` endpoint, and the Gateway
+gained `/api/v1/debug/fault-inject`, which forwards to it — see
+[ADR-0013](../decisions/ADR-0013-bounded-fault-injection.md).
 
 Every endpoint, on every service, additionally exposes:
 - `GET /health` — liveness (process is up)
@@ -43,6 +46,7 @@ OpenTelemetry section for the concrete walkthrough.
 | GET/POST/PATCH | `/api/v1/payments/*` | JWT | `payments:read` / `payments:write` | proxied to Payment Service |
 | GET/POST/PATCH | `/api/v1/users/*` | JWT | `users:read` / `users:write` | proxied to User Service |
 | GET | `/api/v1/notifications/*` | JWT | `notifications:read` | proxied to Notification Service |
+| POST/DELETE | `/api/v1/debug/fault-inject` | JWT | `debug:write` | configure/clear a bounded fault on `gateway` (in-process) or forward to `payment` / `fraud` / `user` / `notification` / `payment-provider`'s own `/internal/fault-injection` |
 
 `POST /auth/login` — `{client_id, client_secret}` → `{access_token,
 token_type: "bearer", expires_in}`. Implemented as of Phase 2:
@@ -75,6 +79,8 @@ Fraud Agent → User Service freeze endpoint).
 | PATCH | `/internal/users/{id}/unfreeze` | **yes** | `{reason, source}` | `UserResponse` |
 | POST | `/internal/users/{id}/debit` | **yes** | `{amount, currency, transaction_id}` | `{balance}` or `409` on insufficient funds |
 | POST | `/internal/users/{id}/credit` | **yes** | `{amount, currency, transaction_id}` | `{balance}` |
+| POST | `/internal/fault-injection` | **yes** | `{mode, error_rate?, latency_ms?, duration_seconds?, component?}` | `{status, component}` |
+| DELETE | `/internal/fault-injection` | **yes** | — (`?component=`) | `{status, component}` |
 
 `UserResponse`: `{id, email, full_name, status, balance, currency, created_at}`
 
@@ -95,11 +101,19 @@ frozen account.
 | POST | `/internal/circuit-breakers/{dependency}/open` | **yes** | — | `{dependency, state}` |
 | POST | `/internal/circuit-breakers/{dependency}/reset` | **yes** | — | `{dependency, state}` |
 | POST | `/internal/recover` | **yes** | — | `{status: "recovered" \| "unchanged"}` |
+| POST | `/internal/fault-injection` | **yes** | `{mode, error_rate?, latency_ms?, duration_seconds?, component?}` | `{status, component}` |
+| DELETE | `/internal/fault-injection` | **yes** | — (`?component=`) | `{status, component}` |
 
 `PaymentRequest`: `{user_id, amount, currency}`
 `PaymentResponse`: `{id, user_id, amount, currency, status, provider, provider_reference, failure_reason, created_at}`
 
 `dependency` for breaker endpoints ∈ `{fraud, user, provider}`.
+
+`component` for fault-injection endpoints defaults to `"self"` (this
+service's own inbound HTTP surface, applied by `FaultInjectionMiddleware`)
+and, on Payment Service only, also accepts `"provider"` — targets
+`MockPaymentProvider`'s in-process `capture()` call directly, since it has
+no HTTP surface of its own for middleware to sit in front of.
 
 `provider` dropped out of `PaymentRequest` during Phase 1 implementation:
 with only one configured provider (`MockPaymentProvider`) there was
@@ -126,6 +140,8 @@ building it speculatively now.
 |---|---|---|---|---|
 | POST | `/internal/risk-check` | **yes** | `{transaction_id, user_id, amount, currency}` | `RiskAssessment` |
 | GET | `/risk-assessments/{transaction_id}` | no | — | `RiskAssessment` |
+| POST | `/internal/fault-injection` | **yes** | `{mode, error_rate?, latency_ms?, duration_seconds?, component?}` | `{status, component}` |
+| DELETE | `/internal/fault-injection` | **yes** | — (`?component=`) | `{status, component}` |
 
 `RiskAssessment`: `{id, transaction_id, user_id, risk_score, risk_level, rationale, rule_version, created_at}`
 
@@ -134,9 +150,13 @@ building it speculatively now.
 | Method | Path | Internal only? | Request | Response |
 |---|---|---|---|---|
 | GET | `/notifications?user_id=` | no | — | `NotificationRecord[]` |
+| POST | `/internal/fault-injection` | **yes** | `{mode, error_rate?, latency_ms?, duration_seconds?, component?}` | `{status, component}` |
+| DELETE | `/internal/fault-injection` | **yes** | — (`?component=`) | `{status, component}` |
 
-No write endpoints are exposed — all writes happen via Redis event
-consumption, not HTTP.
+No public write endpoints are exposed — notifications themselves are
+created via Redis event consumption, not HTTP. The internal
+fault-injection endpoints above are the one exception (Phase 6), and
+they're never routed by the Gateway regardless.
 
 ## Ops Controller (internal-only service, never routed by Gateway)
 

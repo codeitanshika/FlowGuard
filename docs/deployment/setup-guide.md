@@ -116,21 +116,56 @@ curl -s -X POST http://localhost:8000/api/v1/payments \
   -d "{\"user_id\":\"$USER_ID\",\"amount\":\"10.00\",\"currency\":\"USD\"}"
 ```
 
-## Running Fault Injection (target, Phase 6)
+## Running Fault Injection (Phase 6)
+
+Every call needs a bearer token whose client has the `debug:write` scope
+(`test-merchant` in the default local dev clients — see `.env.example`;
+`readonly-client` deliberately doesn't have it, to exercise a 403).
+`target` is one of `gateway`, `payment`, `fraud`, `user`, `notification`,
+or `payment-provider` (Payment Service's in-process mock provider — see
+[ADR-0013](../decisions/ADR-0013-bounded-fault-injection.md)). `gateway`
+is handled in-process by the Gateway itself; every other target is
+forwarded to that service's own `/internal/fault-injection`.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/debug/fault-inject \
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"target": "payment-provider", "mode": "timeout", "duration_seconds": 60}'
+  -d '{"client_id":"test-merchant","client_secret":"test-secret-123"}' \
+  | python -c "import json,sys; print(json.load(sys.stdin)['data']['access_token'])")
+
+# error_500: every matching request fails with a real-looking 500
+curl -X POST http://localhost:8000/api/v1/debug/fault-inject \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"target": "fraud", "mode": "error_500", "error_rate": 1.0, "duration_seconds": 60}'
+
+# latency / timeout: sleeps in place before responding, capped at 60s
+curl -X POST http://localhost:8000/api/v1/debug/fault-inject \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"target": "payment-provider", "mode": "timeout", "latency_ms": 30000, "duration_seconds": 60}'
+
+# Clear a fault before it expires on its own
+curl -X DELETE "http://localhost:8000/api/v1/debug/fault-inject?target=fraud" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-Expected chain: Payment's provider breaker trips → Monitor Agent detects
-the error-rate anomaly → Healer Agent diagnoses and opens the breaker
-(if not already open) → new requests fail fast instead of hanging → once
-the fault expires, the breaker's half-open probe succeeds and it closes →
-`incident.resolved` is published. See
+Every fault is bounded — 5 minutes max duration, 60s max injected
+latency, auto-cleared by Redis TTL even if never explicitly disabled
+(ADR-0013). Health/readiness endpoints and every fault-injection control
+endpoint (including this one on the Gateway itself) are permanently
+exempt from faults, so a self-inflicted 100% error rate on `gateway`
+can never lock you out of clearing it — verified by injecting exactly
+that and confirming the DELETE above still goes through.
+
+Full observable chain today: normal request → inject a fault → error
+rate/latency rises on that dependency → Payment's circuit breaker (Phase
+5) reacts (opens, degrades gracefully, or fails fast depending on which
+dependency) → once the fault expires, the breaker's half-open probe
+succeeds and it closes. The Monitor/Healer-driven detect-and-remediate
+loop described in
 [../architecture/06-event-flows.md](../architecture/06-event-flows.md)
-for the full sequence.
+is the Phase 7-8 continuation of this same chain and isn't built yet —
+today, watch the breaker react via each service's structured logs
+(`breaker.open`, `breaker.half_open`, `breaker.closed`).
 
 ## Viewing Traces in Jaeger
 

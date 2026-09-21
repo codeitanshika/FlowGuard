@@ -18,3 +18,4 @@ the order they were made; a superseded ADR is marked, never deleted.
 | [0010](ADR-0010-static-client-credentials.md) | API client credentials are static config, not a database |
 | [0011](ADR-0011-otlp-direct-to-jaeger.md) | Services export OTLP directly to Jaeger, no separate Collector |
 | [0012](ADR-0012-timeout-budgets-shrink-toward-the-leaves.md) | Timeout budgets must shrink toward the leaves of a call chain |
+| [0013](ADR-0013-bounded-fault-injection.md) | Fault injection is bounded in duration, intensity, and reach by construction |
