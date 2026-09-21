@@ -24,7 +24,15 @@ MAX_DURATION_SECONDS = 300  # 5 minutes
 MAX_LATENCY_MS = 60_000  # 60 seconds
 
 _EXEMPT_PATHS = {"/health", "/ready"}
-_EXEMPT_PREFIX = "/internal/fault-injection"
+# Every path prefix that must stay reachable no matter what a fault is
+# configured to do to everything else — the actual control endpoints
+# for clearing a fault, on every service that has one. The Gateway's
+# debug endpoint lives at a different path than the other services'
+# /internal/fault-injection (it's the one fault-injection control
+# surface meant to be externally reachable at all — see
+# services/gateway/app/api/debug.py), so it's listed here too even
+# though only the Gateway will ever actually have a path under it.
+_EXEMPT_PREFIXES = ("/internal/fault-injection", "/api/v1/debug")
 
 
 class FaultInjected(Exception):
@@ -136,7 +144,7 @@ class FaultInjectionMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
-        if path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIX):
+        if path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES):
             return await call_next(request)
 
         try:
