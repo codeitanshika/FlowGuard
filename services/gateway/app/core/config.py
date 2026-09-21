@@ -15,6 +15,11 @@ class Settings(BaseServiceSettings):
     payment_service_url: str
     user_service_url: str
     notification_service_url: str
+    # Not part of the route table (build_route_table) — Fraud Service is
+    # never reachable through /api/v1/*, only internally by Payment. This
+    # exists solely so the Phase 6 debug endpoint can forward
+    # fault-injection control calls to Fraud's own /internal/fault-injection.
+    fraud_service_url: str
 
     # Shared infra var, deliberately not prefixed with GATEWAY_.
     redis_url: str = Field(validation_alias="REDIS_URL")

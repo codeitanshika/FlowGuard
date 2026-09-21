@@ -4,12 +4,14 @@ from functools import partial
 from fastapi import FastAPI
 
 from app.api.auth import router as auth_router
+from app.api.debug import router as debug_router
 from app.api.health import check_downstream
 from app.api.proxy import build_proxy_router
 from app.core.config import get_settings
-from app.core.dependencies import init_dependencies, shutdown_dependencies
+from app.core.dependencies import get_fault_injector_self, init_dependencies, shutdown_dependencies
 from app.core.routing import build_route_table
 from shared.exception_handlers import register_exception_handlers
+from shared.fault_injection import FaultInjectionMiddleware
 from shared.health import build_health_router
 from shared.logging import configure_logging
 from shared.middleware import TraceIdMiddleware
@@ -40,8 +42,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="FlowGuard API Gateway", lifespan=lifespan)
 instrument_fastapi(app)
+app.add_middleware(FaultInjectionMiddleware, injector_provider=get_fault_injector_self)
 app.add_middleware(TraceIdMiddleware, service_name=settings.service_name)
 register_exception_handlers(app)
 app.include_router(build_health_router(partial(check_downstream, downstream_urls)))
 app.include_router(auth_router)
+# Must be registered before the catch-all proxy router below — the proxy
+# matches /api/v1/{full_path:path} and would otherwise swallow
+# /api/v1/debug/fault-inject and 404 it against the route table.
+app.include_router(debug_router)
 app.include_router(build_proxy_router(route_table))
