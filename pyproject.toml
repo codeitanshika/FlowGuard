@@ -1,0 +1,8 @@
+# Root-level: test tooling config only, not a package — each service has
+# its own pyproject.toml for its actual runtime dependencies (see
+# docs/CODE_STANDARDS.md). Run tests from the repo root with:
+#   python -m pytest
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
