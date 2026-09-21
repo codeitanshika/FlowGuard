@@ -8,12 +8,15 @@ from shared.errors import DependencyUnavailableError
 
 
 class FraudClient:
-    """Sync call to Fraud Service's /internal/risk-check. Plain httpx with
-    a timeout for now — Phase 5 wraps this in a circuit breaker; Phase 4
-    adds OTel span propagation. Neither exists yet, so a slow Fraud
-    Service currently just makes this call slow, not fail fast."""
+    """Sync call to Fraud Service's /internal/risk-check. Breaker-wrapped
+    by the orchestrator (Phase 5), not here — this client stays unaware
+    of retry/breaker concerns, same layering as the other clients.
 
-    def __init__(self, base_url: str, timeout: float = 3.0) -> None:
+    timeout=2.0, not 3.0: see ADR-0012 — this value directly determines
+    the breaker's worst-case retry duration (CircuitBreakerConfig),
+    which must stay safely under the Gateway's own proxy timeout."""
+
+    def __init__(self, base_url: str, timeout: float = 2.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
 

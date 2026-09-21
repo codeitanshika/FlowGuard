@@ -30,7 +30,16 @@ class BreakerOpenError(Exception):
 class CircuitBreakerConfig:
     failure_threshold: int = 5
     recovery_timeout: float = 30.0
-    max_retries: int = 2
+    # max_retries=1 (2 attempts total while CLOSED), not 2 (3 attempts) —
+    # tuned down from the original default after a real bug found via
+    # testing: with a 3s per-call client timeout, 3 attempts + backoff
+    # could take ~10.2s, longer than the Gateway's own 10s proxy timeout
+    # to Payment Service. The Gateway would occasionally give up waiting
+    # even though Payment's retry sequence was about to succeed (or
+    # gracefully degrade) on its own. See ADR-0012: a caller's timeout
+    # must have real headroom over a callee's worst-case retry duration,
+    # not just its single-attempt timeout.
+    max_retries: int = 1
     backoff_base: float = 0.2  # seconds; doubles each retry (0.2, 0.4, ...)
 
 

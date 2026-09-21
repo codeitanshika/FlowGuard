@@ -43,7 +43,14 @@ def build_proxy_router(route_table: dict[str, str]) -> APIRouter:
         body = await request.body()
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as http_client:
+            # 20s, not 10s: must have real headroom over the worst-case
+            # time a backend's own internal retry+backoff sequence can
+            # take, not just a single downstream call's timeout — see
+            # ADR-0012. Found via testing: 10s was too close to Payment's
+            # own fraud-breaker retry budget, so the Gateway would
+            # occasionally give up on a request Payment was about to
+            # answer successfully (via graceful degradation) on its own.
+            async with httpx.AsyncClient(timeout=20.0) as http_client:
                 upstream = await http_client.request(
                     request.method,
                     f"{target_base}/{full_path}",

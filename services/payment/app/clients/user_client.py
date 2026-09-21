@@ -7,11 +7,11 @@ from shared.errors import ConflictError, DependencyUnavailableError, NotFoundErr
 
 
 class UserClient:
-    """Sync calls to User Service's /internal/users/{id}/debit and /credit.
-    Same Phase 5/Phase 4 caveat as FraudClient: no breaker, no trace
-    propagation yet, just a bounded-timeout HTTP call."""
+    """Sync calls to User Service's /internal/users/{id}/debit and
+    /credit. Breaker-wrapped by the orchestrator (Phase 5), not here —
+    see FraudClient for why, and ADR-0012 for why timeout=2.0 not 3.0."""
 
-    def __init__(self, base_url: str, timeout: float = 3.0) -> None:
+    def __init__(self, base_url: str, timeout: float = 2.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
 
