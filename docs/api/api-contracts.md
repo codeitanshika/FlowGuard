@@ -11,6 +11,8 @@ again after Phase 2: the Gateway's JWT auth, scope-based authorization,
 and rate limiting are now real (see below), not just placeholders.
 Updated again after Phase 4: `trace_id` is a real OpenTelemetry trace ID,
 not an ad-hoc header FlowGuard's own code generated and forwarded.
+Updated again after Phase 5: the circuit-breaker endpoints under Payment
+Service are real, not placeholders.
 
 Every endpoint, on every service, additionally exposes:
 - `GET /health` — liveness (process is up)
@@ -107,10 +109,16 @@ returns in the request once Phase 10 makes provider selection real; until
 then it's server-side config, not client input — see
 `services/payment/app/models/schemas.py`.
 
-The three `/internal/circuit-breakers/*` and `/internal/recover` endpoints
-above are not implemented yet — they require an actual circuit breaker to
-control, which is Phase 5. Phase 1's Payment Service has no `/internal/*`
-routes at all.
+`/internal/circuit-breakers/{dependency}/open` and `/reset` are real as
+of Phase 5 — `force_open()`/`reset()` on the named `CircuitBreaker`
+instance (`services/payment/app/api/internal.py`), currently callable by
+anyone on the internal network; Phase 8 narrows that to a token scoped
+to the Healer Agent specifically, same as the Ops Controller's own
+endpoints. `/internal/recover` is still not implemented — its exact
+semantics (re-warm a connection pool? something else?) were never fully
+pinned down even at design time, and nothing needs it yet; revisit once
+the Healer Agent (Phase 8) has a concrete use for it rather than
+building it speculatively now.
 
 ## Fraud Service
 

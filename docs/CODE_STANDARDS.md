@@ -93,8 +93,20 @@ control-plane tables — never a direct write to a business service's schema.
 - `/internal/*` routes are never proxied by the Gateway — reachable only on
   the internal network, and only by the caller identity that owns that
   relationship (see [architecture/03-service-boundaries.md](architecture/03-service-boundaries.md)).
-- Every inter-service call goes through the shared circuit breaker helper
-  in `shared/` — no raw, unguarded `httpx` calls to another service.
+- Every call to a dependency that has its own failure mode independent of
+  the caller goes through `shared/circuit_breaker.py`, wrapped at the
+  orchestrator/service layer, not inside the client itself (see
+  `services/payment/app/services/payment_orchestrator.py`) — clients stay
+  unaware of retry/breaker concerns. As of Phase 5 this means Payment's
+  three outbound dependencies (fraud/user/provider); the Gateway's proxy
+  calls are plain `httpx` with a timeout, not breaker-wrapped — proxying
+  is pass-through by design (see
+  [architecture/04-lld.md](architecture/04-lld.md)), and a breaker
+  tripping there would need its own fallback story the Gateway doesn't
+  have. Every retry/timeout value in a chain must respect
+  [ADR-0012](decisions/ADR-0012-timeout-budgets-shrink-toward-the-leaves.md)
+  — a caller's timeout needs real headroom over a callee's own
+  worst-case retry duration, not just its single-attempt timeout.
 
 ## Agent Code Rules
 

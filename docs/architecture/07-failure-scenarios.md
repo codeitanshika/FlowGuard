@@ -18,6 +18,20 @@ Phase 11 (chaos testing).
 | 9 | Circuit breaker flapping (rapid open/close) | Inconsistent behavior, hard to reason about | `circuitbreaker.state_changed` events firing repeatedly in a short window | Monitor Agent treats rapid state changes as its own anomaly signal; Healer can force-hold a breaker open longer than the default cooldown | Manual intervention if flapping persists past a configured number of cycles |
 | 10 | Malformed/poison event on a Redis channel | A consumer could crash or infinite-loop retrying a bad message | Consumer error spans + repeated processing-failure logs for the same event ID | Consumers validate every event against its pydantic schema on receipt; invalid events are logged and dropped (not retried), never allowed to crash the consumer loop | Dropped/invalid events are visible in structured logs for manual inspection — no silent data loss beyond that one event |
 
+Scenarios 1 and 2 are implemented and verified as of Phase 5 (circuit
+breakers on Payment's three outbound dependencies, real fast-fail and
+graceful-degradation behavior) — see
+[ADR-0012](../decisions/ADR-0012-timeout-budgets-shrink-toward-the-leaves.md)
+for a real bug found testing scenario 2 specifically: Fraud Service's
+retry-with-backoff sequence could take longer than the Gateway's own
+timeout waiting for Payment's response, so the Gateway would occasionally
+give up on a request that was about to succeed via graceful degradation
+on its own. Fixed by tightening the retry budget and widening the
+Gateway's timeout — the general lesson (a caller's timeout needs
+headroom over a callee's *retry* duration, not just its single-attempt
+timeout) applies to every row in this table with a retry loop behind it,
+not just this one.
+
 ## Design Principle Behind This Table
 
 Every row follows the same shape: **detect via telemetry, contain via a

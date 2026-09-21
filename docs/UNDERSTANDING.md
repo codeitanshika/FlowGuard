@@ -30,15 +30,39 @@ followed later in Jaeger.
 
 ## What Is a Circuit Breaker?
 
-Picture Payment Service calling the payment provider, and the provider
-starts timing out. Without protection, every incoming transaction waits
-out that timeout one by one — the failure spreads and slows the whole
-system down. A circuit breaker watches for failures; once too many happen
-in a row, it "opens": for a while it stops even trying and fails instantly
+Picture Payment Service calling Fraud Service, and Fraud Service starts
+timing out. Without protection, every incoming transaction waits out
+that timeout one by one — the failure spreads and slows the whole system
+down. A circuit breaker watches for failures; once too many happen in a
+row, it "opens": for a while it stops even trying and fails instantly
 instead, which is fast and lets the rest of the system react. After a
 cooldown it lets one test call through ("half-open") — success closes it
 again, failure keeps it open longer. Same idea as an electrical breaker:
 better to cut power briefly than let a fault spread.
+
+FlowGuard has three of these in Payment Service — one each for Fraud,
+User, and the payment provider — deliberately separate rather than one
+shared breaker for "any outbound call," so Fraud Service having a bad day
+can never trip the breaker guarding User Service calls. What each one
+*does* once open differs, too, and that difference matters: if the User
+Service breaker opens, the payment fails outright — there's no safe way
+to "guess" whether someone's balance was actually debited, so it has to
+fail loudly rather than silently get it wrong. If the Fraud Service
+breaker opens, the payment still goes through — skipping a fraud check
+is a smaller risk than refusing every payment because one non-critical
+dependency is degraded, so it logs a clear warning and proceeds instead
+of blocking. A breaker's "what happens when it's open" is a business
+decision as much as an engineering one — the same mechanism, two
+deliberately different answers to "then what?"
+
+One more thing that only shows up once you actually run this instead of
+just reading the code: a breaker's retry-with-backoff (see ADR-0012)
+takes real time — a few seconds, not milliseconds, while it gives a
+maybe-transient failure a chance to recover before giving up. Whatever
+calls *this* service needs a timeout long enough to wait that out,
+or the caller gives up on a request that was about to succeed on its
+own. This is exactly the kind of bug that never shows up testing one
+service in isolation — only once the whole chain runs together.
 
 ## What Is an Agent?
 
