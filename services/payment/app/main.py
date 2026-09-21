@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.internal import router as internal_router
 from app.api.payments import router as payments_router
 from app.core.config import get_settings
 from app.core.dependencies import init_dependencies, shutdown_dependencies
@@ -42,3 +43,4 @@ app.add_middleware(TraceIdMiddleware, service_name=settings.service_name)
 register_exception_handlers(app)
 app.include_router(build_health_router(is_ready))
 app.include_router(payments_router)
+app.include_router(internal_router)

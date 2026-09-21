@@ -37,3 +37,8 @@ class RiskCheckResult(BaseModel):
     risk_score: Decimal
     risk_level: Literal["low", "medium", "high"]
     rationale: str
+
+
+class BreakerStatus(BaseModel):
+    dependency: Literal["fraud", "user", "provider"]
+    state: Literal["closed", "open", "half_open"]
