@@ -5,10 +5,11 @@ from fastapi import FastAPI
 from app.api.internal import router as internal_router
 from app.api.payments import router as payments_router
 from app.core.config import get_settings
-from app.core.dependencies import init_dependencies, shutdown_dependencies
+from app.core.dependencies import get_fault_injector_self, init_dependencies, shutdown_dependencies
 from app.db.models import Base
 from app.db.session import engine, is_ready
 from shared.exception_handlers import register_exception_handlers
+from shared.fault_injection import FaultInjectionMiddleware
 from shared.health import build_health_router
 from shared.logging import configure_logging
 from shared.middleware import TraceIdMiddleware
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="FlowGuard Payment Service", lifespan=lifespan)
 instrument_fastapi(app)
+app.add_middleware(FaultInjectionMiddleware, injector_provider=get_fault_injector_self)
 app.add_middleware(TraceIdMiddleware, service_name=settings.service_name)
 register_exception_handlers(app)
 app.include_router(build_health_router(is_ready))
