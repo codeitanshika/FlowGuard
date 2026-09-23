@@ -183,5 +183,27 @@ services:
     ports:
       - "8000:8000"
 
+  monitor:
+    build:
+      context: .
+      dockerfile: agents/monitor/Dockerfile
+    env_file: .env
+    environment:
+      MONITOR_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_control
+      MONITOR_JAEGER_QUERY_URL: http://jaeger:16686
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    # Not gated on the business services: the Monitor should come up and
+    # keep watching even while they are down — that is when it matters.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    ports:
+      - "8005:8005"
+
 volumes:
   flowguard_pg_data:
