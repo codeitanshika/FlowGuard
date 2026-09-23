@@ -158,6 +158,18 @@ created via Redis event consumption, not HTTP. The internal
 fault-injection endpoints above are the one exception (Phase 6), and
 they're never routed by the Gateway regardless.
 
+## Monitor Agent (Phase 7, port 8005, never routed by Gateway)
+
+| Method | Path | Internal only? | Request | Response |
+|---|---|---|---|---|
+| GET | `/health`, `/ready` | no | — | standard envelope |
+
+The Monitor exposes no business API — it is a background loop with a health
+surface. Its output is the `anomaly.detected` event (payload in
+[06-event-flows.md](../architecture/06-event-flows.md); `trace_id` is an
+example trace from the evaluation window) and the `anomalies` table.
+`metric` ∈ `{error_rate (fraction), p95_latency (ms), throughput (req/s)}`.
+
 ## Ops Controller (internal-only service, never routed by Gateway)
 
 | Method | Path | Request | Response |

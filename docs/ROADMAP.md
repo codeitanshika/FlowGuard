@@ -17,7 +17,7 @@ see the working style in [architecture/README.md](architecture/README.md).
 | 4 | Observability: OpenTelemetry across all services, traces exported to Jaeger | ✅ Done |
 | 5 | Resilience: circuit breaker (CLOSED→OPEN→HALF_OPEN→CLOSED) in Redis, timeouts, retries, backoff, idempotency | ✅ Done |
 | 6 | Fault injection: controlled HTTP 500s, latency, timeouts, provider failures, configurable error rate | ✅ Done |
-| 7 | Monitor Agent: telemetry → error rate / p95 / p99 / throughput → anomaly detection → `anomaly.detected` | Planned |
+| 7 | Monitor Agent: telemetry → error rate / p95 / p99 / throughput → anomaly detection → `anomaly.detected` | ✅ Done — see [ADR-0014](decisions/ADR-0014-monitor-derives-metrics-from-jaeger-traces.md) |
 | 8 | Healer Agent: anomaly → diagnosis (LLM) → schema-validated decision → allowlisted action via Ops Controller → verify → `incident.resolved` | Planned |
 | 9 | Fraud Agent: velocity/geo analysis → deterministic risk decision → LLM narrative → freeze via User Service → notification | Planned |
 | 10 | Real payment sandbox integration (one provider first), behind a swappable abstraction | Planned |

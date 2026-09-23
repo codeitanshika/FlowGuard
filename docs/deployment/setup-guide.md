@@ -83,6 +83,7 @@ curl http://localhost:8001/health   # payment
 curl http://localhost:8002/health   # fraud
 curl http://localhost:8003/health   # user
 curl http://localhost:8004/health   # notification
+curl http://localhost:8005/health   # monitor agent
 ```
 
 Workflow A additionally shows container-level health:
@@ -166,6 +167,53 @@ loop described in
 is the Phase 7-8 continuation of this same chain and isn't built yet —
 today, watch the breaker react via each service's structured logs
 (`breaker.open`, `breaker.half_open`, `breaker.closed`).
+
+## Running the Monitor Agent (Phase 7)
+
+The Monitor starts with the rest of the stack (`docker compose up`) and
+needs no manual steps, **but** it stores anomalies in a new
+`flowguard_control` database that only gets created on a *fresh* Postgres
+volume. If you had a stack running before Phase 7, either run
+`docker compose down -v` first (wipes local data) or create it once:
+`docker compose exec postgres psql -U flowguard -c "CREATE DATABASE flowguard_control;"`.
+
+Every 15s it logs one `monitor.snapshot` line per service (requests, error
+rate, p95/p99, throughput over the last 60s):
+
+```bash
+docker compose logs -f monitor | grep monitor.snapshot
+```
+
+Watch the events it publishes, then break something (needs the `TOKEN`
+from the fault-injection section above, and at least 10 requests in the
+window — below that the Monitor deliberately stays quiet):
+
+```bash
+docker compose exec redis redis-cli subscribe anomaly.detected   # terminal 1
+
+curl -X POST http://localhost:8000/api/v1/debug/fault-inject \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"target":"payment-provider","mode":"error_500","duration_seconds":180}'
+# ...send ~15 payments (see "A Full Request, End to End")...
+```
+
+Within about 15-30 seconds a critical `payment` `error_rate` anomaly
+appears in that terminal and in the database:
+
+```bash
+docker compose exec postgres psql -U flowguard -d flowguard_control \
+  -c "select service, metric, observed_value, threshold, severity, trace_id from anomalies order by detected_at"
+```
+
+Paste the `trace_id` into Jaeger (`http://localhost:16686`) to open an
+example failing request. Repeat breaches of the same service+metric are
+suppressed for 2 minutes (`MONITOR_ALERT_COOLDOWN_SECONDS`) so a sustained
+outage produces one event, not one every 15s. Common gotchas: no anomaly
+=> fewer than 10 requests in the window, or the payment returned 201
+`failed` before the Payment image was rebuilt with the span-tagging change;
+`monitor.telemetry_unavailable` => Jaeger is down (the Monitor recovers on
+its own). `latency` faults need `latency_ms` above 1000 to cross the
+default p95 warning threshold.
 
 ## Viewing Traces in Jaeger
 
