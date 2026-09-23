@@ -6,3 +6,5 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# So bare `pytest` (not just `python -m pytest`) can import shared/ and agents/.
+pythonpath = ["."]
