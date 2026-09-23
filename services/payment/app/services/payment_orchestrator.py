@@ -3,6 +3,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.fraud_client import FraudClient
@@ -128,6 +130,8 @@ class PaymentOrchestrator:
             debited = True
             transaction = await self._capture_with_provider(db, transaction)
         except (ConflictError, DependencyUnavailableError, BreakerOpenError) as exc:
+            if not isinstance(exc, ConflictError):
+                _mark_span_as_dependency_failure(exc)
             if debited:
                 logger.warning("payment.compensating_debit", transaction_id=str(transaction.id))
                 await self._credit_user(transaction)
@@ -235,6 +239,20 @@ class PaymentOrchestrator:
                 failure_reason=transaction.failure_reason,
             ),
         )
+
+
+def _mark_span_as_dependency_failure(exc: Exception) -> None:
+    """A payment that fails because a dependency is down is still returned
+    as HTTP 201 with status=failed (a recorded outcome, replayable by
+    idempotency key), so the request span would otherwise look perfectly
+    healthy — and the Monitor Agent, which derives error rate from spans,
+    would never see a provider/user outage. Marking the span ERROR here
+    keeps the API contract intact while making the failure observable.
+    Business rejections (ConflictError) are deliberately not marked: a
+    declined or fraud-blocked payment is the system working correctly."""
+    span = trace.get_current_span()
+    span.set_status(Status(StatusCode.ERROR, str(exc)))
+    span.set_attribute("flowguard.failure_kind", "dependency")
 
 
 def _event_payload(event: str, **fields: Any) -> dict[str, Any]:
