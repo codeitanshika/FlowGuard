@@ -178,6 +178,18 @@ control-plane tables — never a direct write to a business service's schema.
   | fraud | no outbound calls | yes | no |
   | user | no outbound calls | yes | no |
   | notification | no outbound calls | yes | yes — event bus |
+  | monitor (agent) | no — deliberate | no | no — deliberate |
+
+  The Monitor calls httpx (Jaeger) and Redis constantly but is not
+  instrumented for either: tracing its own polling would feed the
+  Monitor's activity back into the telemetry it analyzes.
+
+- **Report failures on the span, not only in the response.** The Monitor
+  computes error rate from spans. A failure that is returned as a normal
+  HTTP response (e.g. a payment recorded as `failed` because a dependency
+  is down, returned as 201) must additionally mark its span ERROR, or it
+  is invisible to detection. Business rejections are not errors. See
+  [ADR-0014](decisions/ADR-0014-monitor-derives-metrics-from-jaeger-traces.md).
 
 - Redis pub/sub is the one hop OTel's auto-instrumentation can't see
   across (a published event is a string, not an HTTP request). A

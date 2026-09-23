@@ -86,17 +86,22 @@ app/
 ## Monitor Agent (`agents/monitor`)
 
 ```
-agent.py          # main loop: poll metrics -> evaluate -> publish
-metrics_client.py    # queries OTel Collector / metrics backend
+agent.py          # main loop: poll metrics -> evaluate -> persist -> publish
+metrics_client.py    # queries Jaeger's trace API (ADR-0014; no Collector, ADR-0011)
 thresholds.py           # configurable per-service thresholds
-detector.py                # error rate / p95 / p99 / throughput calculations
-db.py                         # persist anomalies
+detector.py                # error rate / p95 / p99 / throughput + breach grading
+alert_state.py                # Redis cooldown dedupe (suppress repeats, allow escalation)
+db.py                            # `anomalies` model + persistence
 config.py
+main.py                             # FastAPI shell: /health, /ready, runs the loop
 ```
 
-- **Loop:** poll on a fixed interval (configurable), compute metrics per
-  service, compare to threshold, publish `anomaly.detected` + persist to
-  `anomalies` on breach.
+- **Loop:** poll on a fixed interval (default 15s over a 60s window),
+  compute metrics per service, compare to threshold, and on a
+  non-suppressed breach persist to `anomalies` then publish
+  `anomaly.detected`. The event's `trace_id` is an example trace from the
+  window (latest errored request, or slowest request), not the Monitor's
+  own — open it in Jaeger to see the failure.
 - **DB tables owned:** `anomalies` (in the shared control-plane schema,
   see [05-database-schema.md](05-database-schema.md)).
 - **No write access to any business service — detection only.**
