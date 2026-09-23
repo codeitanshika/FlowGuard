@@ -166,7 +166,19 @@ class HealerAgent:
                             f"{action_taken} not applied: {exc}",
                         )
                         return
-                    action_taken += " (applied moments ago for an earlier incident)"
+                    # The cooldown says the action ran recently, not that its
+                    # effect still holds (something may have reset the
+                    # breaker since) — so check the actual state.
+                    wanted = "open" if chosen.action == "open-circuit" else "closed"
+                    current = ((await self._gatherer.circuits()) or {}).get(chosen.dependency)
+                    if current != wanted:
+                        await self._close(
+                            incident_id, anomaly.anomaly_id, "failed", root_cause,
+                            f"{action_taken} blocked by the Ops cooldown and the breaker is "
+                            f"'{current}', not '{wanted}'; a later anomaly will retry",
+                        )
+                        return
+                    action_taken += " (already applied by an earlier action)"
                 else:
                     await db.mark_decision_executed(decision_id)
                     logger.warning(

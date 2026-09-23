@@ -74,14 +74,18 @@ class FakeOps:
 
 
 class FakeGatherer:
+    """`circuits` may be a single dict, or a list of dicts returned one per
+    call (the last repeats) to model state changing between reads."""
+
     def __init__(self, facts=None, circuits=None):
-        self._facts, self._circuits = facts or [], circuits or {}
+        self._facts = facts or []
+        self._circuits = circuits if isinstance(circuits, list) else [circuits or {}]
 
     async def trace_facts(self, trace_id):
         return self._facts
 
     async def circuits(self):
-        return self._circuits
+        return self._circuits.pop(0) if len(self._circuits) > 1 else self._circuits[0]
 
 
 def anomaly(service="payment", metric="error_rate") -> AnomalyEvent:
@@ -153,14 +157,25 @@ async def test_already_open_breaker_is_not_reopened_but_is_verified(env):
     assert env.db.final[0] == IncidentStatus.resolved and "already open" in env.db.final[2]
 
 
-async def test_ops_cooldown_is_treated_as_recently_applied(env):
+async def test_ops_cooldown_with_breaker_still_in_target_state_counts_as_applied(env):
     env.checks.append("recovered")
     ops = FakeOps(OpsError(429, "ran too recently"))
-    agent = make_agent(env, FakeGatherer([PROVIDER_FACT], {"provider": "closed"}), ops)
-    await agent._handle(anomaly())
+    gatherer = FakeGatherer([PROVIDER_FACT], [{"provider": "closed"}, {"provider": "open"}])
+    await make_agent(env, gatherer, ops)._handle(anomaly())
 
-    assert env.db.final[0] == IncidentStatus.resolved and "moments ago" in env.db.final[2]
+    assert env.db.final[0] == IncidentStatus.resolved and "already applied" in env.db.final[2]
     assert not env.db.executed_marks
+
+
+async def test_ops_cooldown_with_breaker_not_in_target_state_fails_the_incident(env):
+    # Something reset the breaker after the earlier action: the cooldown must
+    # not be mistaken for "still in effect".
+    env.checks.append("recovered")
+    ops = FakeOps(OpsError(429, "ran too recently"))
+    gatherer = FakeGatherer([PROVIDER_FACT], [{"provider": "closed"}, {"provider": "closed"}])
+    await make_agent(env, gatherer, ops)._handle(anomaly())
+
+    assert env.db.final[0] == IncidentStatus.failed and "blocked by the Ops cooldown" in env.db.final[2]
 
 
 @pytest.mark.parametrize("error", [OpsError(403, "forbidden"), OpsError(0, "unreachable"), OpsError(503, "payment down")])
