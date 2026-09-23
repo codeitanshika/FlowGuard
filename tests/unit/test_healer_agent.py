@@ -197,12 +197,22 @@ async def test_unrecovered_service_fails_the_incident_after_the_timeout(env):
     assert env.db.final[0] == IncidentStatus.failed and "not verified" in env.db.final[2]
 
 
-async def test_no_traffic_to_a_shielded_service_counts_as_contained(env):
+async def test_no_traffic_to_a_shielded_service_counts_as_contained_when_breaker_holds(env):
     env.checks.append("no_traffic")
-    agent = make_agent(env, FakeGatherer([], {"user": "closed"}), FakeOps())
-    await agent._handle(anomaly(service="user"))
+    # 1st read (planning): closed, so the action runs; later reads: open.
+    gatherer = FakeGatherer([], [{"user": "closed"}, {"user": "open"}])
+    await make_agent(env, gatherer, FakeOps())._handle(anomaly(service="user"))
 
     assert env.db.final[0] == IncidentStatus.resolved and "contained" in env.db.final[2]
+
+
+async def test_idle_system_is_not_containment_if_the_breaker_is_closed(env):
+    # Silence with a closed breaker just means nobody is calling: no proof.
+    env.checks.append("no_traffic")
+    gatherer = FakeGatherer([], {"user": "closed"})
+    await make_agent(env, gatherer, FakeOps())._handle(anomaly(service="user"))
+
+    assert env.db.final[0] == IncidentStatus.failed and "not verified" in env.db.final[2]
 
 
 async def test_no_traffic_is_not_recovery_for_the_calling_service(env):

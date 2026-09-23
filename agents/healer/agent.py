@@ -231,7 +231,11 @@ class HealerAgent:
                 return True, "verified: metric back within thresholds"
             quiet_checks = quiet_checks + 1 if last == "no_traffic" else 0
             if shielded and quiet_checks >= 2:
-                return True, "contained: traffic no longer reaches the failing service"
+                # Silence alone could just be an idle system; it only counts
+                # as containment if the breaker is really still holding.
+                state = ((await self._gatherer.circuits()) or {}).get(chosen.dependency)
+                if state in ("open", "half_open"):
+                    return True, "contained: breaker holding and no traffic reaches the failing service"
         return False, f"not verified within {settings.verify_timeout_seconds}s (last check: {last})"
 
     # --- closing out ------------------------------------------------------
