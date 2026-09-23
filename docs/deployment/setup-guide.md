@@ -84,6 +84,8 @@ curl http://localhost:8002/health   # fraud
 curl http://localhost:8003/health   # user
 curl http://localhost:8004/health   # notification
 curl http://localhost:8005/health   # monitor agent
+curl http://localhost:8006/health   # ops controller (loopback only)
+curl http://localhost:8007/health   # healer agent
 ```
 
 Workflow A additionally shows container-level health:
@@ -214,6 +216,75 @@ outage produces one event, not one every 15s. Common gotchas: no anomaly
 `monitor.telemetry_unavailable` => Jaeger is down (the Monitor recovers on
 its own). `latency` faults need `latency_ms` above 1000 to cross the
 default p95 warning threshold.
+
+## Running the Healer Agent and Ops Controller (Phase 8)
+
+Both start with `docker compose up` (fresh volume needed for the shared
+`flowguard_control` database, as in the Monitor section). With no
+`ANTHROPIC_API_KEY` the Healer decides from its deterministic rules and logs
+`healer.llm_disabled`; set the key in `.env` to let the LLM propose instead
+(any LLM failure falls back to the rules).
+
+**Try the Ops Controller's safety boundary directly** (loopback only; token is
+`OPS_HEALER_TOKEN` from `.env`):
+
+```bash
+T=local-dev-healer-token-change-me
+curl -X POST http://127.0.0.1:8006/ops/actions/open-circuit \
+  -H "Content-Type: application/json" -d '{"service":"payment","dependency":"fraud"}'        # 401
+curl -X POST http://127.0.0.1:8006/ops/actions/open-circuit -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" -d '{"service":"payment","dependency":"database"}'     # 400 off-allowlist
+curl -X POST http://127.0.0.1:8006/ops/actions/restart-service -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" -d '{"service":"payment"}'                             # 404 no such action
+curl http://127.0.0.1:8006/ops/circuits -H "Authorization: Bearer $T"                        # breaker states
+```
+
+Every call to an action endpoint, including the rejected ones, is in the audit
+table:
+
+```bash
+docker compose exec postgres psql -U flowguard -d flowguard_control \
+  -c "select action, caller, status, detail from ops_actions order by created_at"
+```
+
+**Watch the whole self-healing loop.** Steady traffic is essential — the
+Monitor needs 10+ requests in its window and the Healer needs traffic to
+verify recovery. Log in **once** and reuse the token (logging in per request
+trips the Gateway's own 10/min login limit). Then break the Fraud Service
+partially (35% errors is enough to alert but not to trip Payment's breaker):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/debug/fault-inject -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"target":"fraud","mode":"error_500","error_rate":0.35,"duration_seconds":180}'
+# ...keep a payment loop running (one payment every ~0.5s)...
+docker compose logs -f monitor healer | grep -E "anomaly_detected|healer\."
+```
+
+Expected within ~30s: `monitor.anomaly_detected` (fraud, error_rate) →
+`healer.incident_opened` → `healer.decision` (source `rules`, plan `execute`) →
+`healer.action_executed` → after ~30s `healer.incident_closed` (`resolved`,
+"contained: breaker holding and no traffic reaches the failing service").
+Inspect the record:
+
+```bash
+docker compose exec postgres psql -U flowguard -d flowguard_control \
+  -c "select status, root_cause, action_taken from incidents order by opened_at"
+docker compose exec postgres psql -U flowguard -d flowguard_control \
+  -c "select agent, validated, executed, decision->'plan' plan, input_summary->>'source' source from agent_decisions"
+```
+
+Provider outage (`"target":"payment-provider"`, `error_rate` 1.0): Payment's
+own breaker usually trips first, so the Healer infers `provider` from the
+trace, sees the breaker already open, takes **no** action, and verifies
+recovery once the fault expires (a later re-alert is recognised as stale and
+also produces no action). Common gotchas: no incident => fewer than 10
+requests in the Monitor's window, or the same (service, metric) alerted in
+the last 2 min (Monitor cooldown; `redis-cli del monitor:alert:<svc>:<metric>`
+to reset while testing); `429` from the Ops Controller => the same action on
+the same target ran in the last 60s (`OPS_ACTION_COOLDOWN_SECONDS`); an
+incident stuck `remediating` is still verifying (up to 5 min) and is closed
+as failed if the Healer restarts.
 
 ## Viewing Traces in Jaeger
 

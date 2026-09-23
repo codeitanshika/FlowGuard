@@ -179,10 +179,28 @@ control-plane tables — never a direct write to a business service's schema.
   | user | no outbound calls | yes | no |
   | notification | no outbound calls | yes | yes — event bus |
   | monitor (agent) | no — deliberate | no | no — deliberate |
+  | healer (agent) | no — deliberate | no | no |
+  | ops-controller | yes — calls Payment's breaker endpoints | no | no |
 
   The Monitor calls httpx (Jaeger) and Redis constantly but is not
   instrumented for either: tracing its own polling would feed the
-  Monitor's activity back into the telemetry it analyzes.
+  Monitor's activity back into the telemetry it analyzes. The Healer
+  polls Jaeger during verification for the same reason. The Ops Controller
+  is instrumented so a remediation's call into Payment is visible in
+  Jaeger.
+
+- **Control-plane tables live in one place.** `shared/control_plane`
+  defines `anomalies`, `incidents`, `agent_decisions` and `ops_actions` on
+  one metadata object; every control-plane component creates the schema via
+  `init_control_plane_schema` (advisory-locked — components start together).
+  A new agent adds its tables there rather than defining a second `Base`.
+
+- **Anything that can change system state goes through the Ops
+  Controller.** New remediation capabilities are added to
+  `agents/ops_controller/allowlist.py` in a reviewed commit and covered by
+  an adversarial test in `tests/unit/test_ops_allowlist.py`; the
+  allowlist test asserts the exact set of actions so an accidental addition
+  fails CI.
 
 - **Report failures on the span, not only in the response.** The Monitor
   computes error rate from spans. A failure that is returned as a normal
