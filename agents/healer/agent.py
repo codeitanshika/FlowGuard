@@ -12,7 +12,7 @@ from agents.healer.context import ContextGatherer
 from agents.healer.diagnosis import PROMPT_VERSION, Diagnoser
 from agents.healer.ops_client import OpsClient, OpsError
 from agents.healer.schemas import AnomalyEvent
-from agents.healer.verifier import check_recovery
+from agents.healer.verifier import check_recovery, check_still_failing
 from agents.monitor.metrics_client import JaegerMetricsClient, MetricsUnavailableError
 from agents.monitor.thresholds import resolve_thresholds
 from agents.ops_controller.allowlist import describe_allowlist
@@ -155,6 +155,14 @@ class HealerAgent:
                 return
 
             action_taken = f"{chosen.action}:{chosen.service}:{chosen.dependency}"
+            if chosen.kind == "execute" and chosen.action == "open-circuit":
+                stale = await self._stale_reason(anomaly)
+                if stale:
+                    await self._close(
+                        incident_id, anomaly.anomaly_id, "resolved", root_cause,
+                        f"no action taken: {stale}",
+                    )
+                    return
             if chosen.kind == "execute":
                 await db.update_incident(incident_id, IncidentStatus.remediating, root_cause)
                 try:
@@ -199,6 +207,26 @@ class HealerAgent:
         except Exception as exc:  # noqa: BLE001 - an incident must always reach a terminal state
             logger.error("healer.incident_failed", incident_id=str(incident_id), error=str(exc))
             await self._close(incident_id, anomaly.anomaly_id, "failed", root_cause, f"error: {exc}")
+
+    async def _stale_reason(self, anomaly: AnomalyEvent) -> str | None:
+        """Why this anomaly should not be acted on, or None to proceed.
+        Telemetry being unreachable does not block the action: the Monitor's
+        detection already justified it, this is only a staleness guard."""
+        settings = self._settings
+        thresholds = resolve_thresholds(anomaly.service, settings.default_thresholds, settings.service_thresholds)
+        try:
+            fresh = await check_still_failing(
+                self._metrics, anomaly.service, anomaly.metric, thresholds,
+                settings.precheck_window_seconds, settings.precheck_recent_samples,
+            )
+        except MetricsUnavailableError as exc:
+            logger.warning("healer.precheck_unavailable", error=str(exc))
+            return None
+        if fresh == "recovered":
+            return "the failure had already stopped by the time it was checked (stale anomaly)"
+        if fresh == "no_traffic":
+            return "no recent traffic to confirm the failure is ongoing; the Monitor will re-alert if it recurs"
+        return None
 
     async def _allowed_actions(self) -> list[dict[str, Any]]:
         try:

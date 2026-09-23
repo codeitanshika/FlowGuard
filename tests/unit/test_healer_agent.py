@@ -108,13 +108,21 @@ def env(monkeypatch):
         return checks.pop(0) if len(checks) > 1 else checks[0]
 
     monkeypatch.setattr(agent_module, "check_recovery", fake_check)
-    return SimpleNamespace(db=fake_db, bus=FakeBus(), checks=checks)
+
+    prechecks: list[str] = ["still_failing"]
+
+    async def fake_precheck(*args, **kwargs):
+        return prechecks[0]
+
+    monkeypatch.setattr(agent_module, "check_still_failing", fake_precheck)
+    return SimpleNamespace(db=fake_db, bus=FakeBus(), checks=checks, prechecks=prechecks)
 
 
 def make_agent(env, gatherer, ops, max_concurrent=10) -> HealerAgent:
     settings = SimpleNamespace(
         verify_interval_seconds=0.001, verify_window_seconds=30, verify_timeout_seconds=0.05,
         max_concurrent_incidents=max_concurrent, default_thresholds=Thresholds(), service_thresholds={},
+        precheck_window_seconds=30, precheck_recent_samples=5,
     )
     return HealerAgent(settings, env.bus, gatherer, Diagnoser(None, "claude-opus-5"), ops, metrics=None)
 
@@ -242,3 +250,32 @@ async def test_overload_is_recorded_not_silently_dropped(env):
         await task
 
     assert env.db.final[0] == IncidentStatus.failed and "max concurrent" in env.db.final[2]
+
+
+@pytest.mark.parametrize("fresh,note", [
+    ("recovered", "stale anomaly"),
+    ("no_traffic", "no recent traffic"),
+])
+async def test_stale_anomaly_is_not_acted_on(env, fresh, note):
+    env.prechecks[0] = fresh
+    ops = FakeOps()
+    agent = make_agent(env, FakeGatherer([PROVIDER_FACT], {"provider": "closed"}), ops)
+    await agent._handle(anomaly())
+
+    assert ops.calls == [], "must not force-open a breaker on a dependency that has already recovered"
+    assert env.db.final[0] == IncidentStatus.resolved and note in env.db.final[2]
+    assert not env.db.executed_marks
+
+
+async def test_precheck_telemetry_outage_does_not_block_the_action(env, monkeypatch):
+    from agents.monitor.metrics_client import MetricsUnavailableError
+
+    async def unavailable(*args, **kwargs):
+        raise MetricsUnavailableError("jaeger down")
+
+    monkeypatch.setattr(agent_module, "check_still_failing", unavailable)
+    env.checks.append("recovered")
+    ops = FakeOps()
+    await make_agent(env, FakeGatherer([PROVIDER_FACT], {"provider": "closed"}), ops)._handle(anomaly())
+
+    assert ops.calls == [("open-circuit", "payment", "provider")]

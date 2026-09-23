@@ -32,6 +32,10 @@ class Settings(BaseServiceSettings):
     verify_window_seconds: int = Field(default=30, ge=5)
     verify_timeout_seconds: int = Field(default=300, ge=10)
     max_concurrent_incidents: int = Field(default=10, ge=1)
+    # Before force-opening a breaker, confirm the failure is still going on
+    # in the most recent requests (see verifier.check_still_failing).
+    precheck_window_seconds: int = Field(default=30, ge=5)
+    precheck_recent_samples: int = Field(default=5, ge=1)
 
     # Must match the Monitor's thresholds so "recovered" means exactly
     # "the Monitor would not alert" (keep MONITOR_/HEALER_ overrides in sync).

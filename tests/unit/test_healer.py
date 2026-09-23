@@ -15,6 +15,9 @@ from agents.healer.context import SpanFact, clean_text, implicated_dependencies,
 from agents.healer.diagnosis import Diagnoser
 from agents.healer.rules import decide
 from agents.healer.schemas import AnomalyEvent, HealerDecision
+from agents.healer.verifier import check_still_failing
+from agents.monitor.detector import SpanSample
+from agents.monitor.thresholds import Thresholds
 from agents.ops_controller.allowlist import describe_allowlist
 
 
@@ -204,6 +207,41 @@ async def test_any_llm_failure_falls_back_to_rules(name, response):
     assert result.source == "rules"
     assert result.fallback_reason
     assert result.decision.action == "open-circuit" and result.decision.dependency == "provider"
+
+
+class FakeMetrics:
+    def __init__(self, samples):
+        self._samples = samples
+
+    async def fetch_samples(self, service, window):
+        return self._samples, False
+
+
+def sample(start, error=False, ms=50.0):
+    return SpanSample(f"t{start}", start, ms, error)
+
+
+async def test_precheck_sees_failure_that_is_still_happening():
+    metrics = FakeMetrics([sample(1, True), sample(2, True), sample(3, False), sample(4, True)])
+    assert await check_still_failing(metrics, "payment", "error_rate", Thresholds(), 30, 5) == "still_failing"
+
+
+async def test_precheck_ignores_old_failures_when_recent_requests_succeed():
+    outage = [sample(i, True) for i in range(1, 11)]
+    clean = [sample(i, False) for i in range(11, 16)]
+    result = await check_still_failing(FakeMetrics(outage + clean), "payment", "error_rate", Thresholds(), 30, 5)
+    assert result == "recovered"
+
+
+async def test_precheck_with_no_recent_traffic_cannot_confirm():
+    assert await check_still_failing(FakeMetrics([]), "payment", "error_rate", Thresholds(), 30, 5) == "no_traffic"
+
+
+async def test_precheck_latency_uses_recent_p95():
+    slow = [sample(i, ms=4000.0) for i in range(1, 6)]
+    fast = [sample(i, ms=20.0) for i in range(6, 11)]
+    assert await check_still_failing(FakeMetrics(slow), "p", "p95_latency", Thresholds(), 30, 5) == "still_failing"
+    assert await check_still_failing(FakeMetrics(slow + fast), "p", "p95_latency", Thresholds(), 30, 5) == "recovered"
 
 
 async def test_without_a_client_the_rules_decide():
