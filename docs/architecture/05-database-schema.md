@@ -171,7 +171,33 @@ CREATE TABLE agent_decisions (
 `agent_decisions` is deliberately generic enough to log a Healer decision
 *or* a Fraud Agent decision — this is the table Phase 14/15 read from for
 LLM cost/latency tracking and evaluation accuracy metrics, so it's modeled
-now rather than bolted on later.
+now rather than bolted on later. As built, the Healer is its first writer
+(`agent` = `healer`, `llm_*` null when the deterministic rules decided);
+the Monitor writes only `anomalies`, since its decisions involve no LLM and
+the anomaly row is already its full audit record
+([ADR-0014](../decisions/ADR-0014-monitor-derives-metrics-from-jaeger-traces.md)).
+
+Added in Phase 8 (not in the original Phase 0 design) — the Ops Controller's
+audit log, the record ADR-0005 requires of every proposed action:
+
+```sql
+CREATE TABLE ops_actions (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action        TEXT NOT NULL,
+    params        JSONB NOT NULL,            -- what was actually received (size-bounded)
+    caller        TEXT NOT NULL,             -- 'healer' | 'unauthenticated'
+    status        TEXT NOT NULL,             -- received | rejected | executed | failed
+    detail        TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at  TIMESTAMPTZ
+);
+```
+
+A row is committed as `received` before authentication is acted on, so
+every call to an action endpoint leaves a trace, including rejected ones.
+All four control-plane tables are defined once in `shared/control_plane` and
+created under a Postgres advisory lock (Monitor, Healer and Ops Controller
+start together).
 
 ## Ephemeral State (Redis, not Postgres)
 
@@ -181,6 +207,9 @@ now rather than bolted on later.
 | `ratelimit:{client_id}:{window}` | Gateway rate-limit counters | window length |
 | `velocity:{user_id}` | Fraud Agent sliding-window transaction timestamps | rolling, e.g. 1h |
 | `idempotency:lock:{key}` | short-lived lock to prevent concurrent duplicate processing of the same idempotency key | seconds |
+| `fault:{service}:{component}` | injected fault config (ADR-0013) | the fault's `duration_seconds` |
+| `monitor:alert:{service}:{metric}` | Monitor alert-dedupe cooldown (ADR-0014) | `MONITOR_ALERT_COOLDOWN_SECONDS` (120) |
+| `ops:cooldown:{action}:{service}:{dependency}` | Ops Controller per-target action cooldown | `OPS_ACTION_COOLDOWN_SECONDS` (60) |
 
 These are intentionally excluded from PostgreSQL: they're either
 high-write/low-value-per-entry (rate limits, velocity) or must be read with

@@ -109,22 +109,30 @@ main.py                             # FastAPI shell: /health, /ready, runs the l
 ## Healer Agent (`agents/healer`)
 
 ```
-agent.py             # main loop: subscribe anomaly.detected -> handle
-context.py              # pulls trace context + current breaker state
-diagnosis.py                # builds the LLM prompt, calls Anthropic, parses response
-schemas.py                     # HealerDecision pydantic model (structured LLM output)
-allowlist.py                      # maps decision.action -> Ops Controller call
-verifier.py                          # re-checks health/metrics post-action
-db.py                                    # persist incidents, agent_decisions
-config.py
+agent.py             # subscribe anomaly.detected; one task per incident; verification; close-out
+context.py              # trace evidence (sanitized span facts) + breaker state
+diagnosis.py                # LLM call (messages.parse -> HealerDecision) with rule fallback
+rules.py                       # deterministic fallback for unambiguous error-rate signatures
+schemas.py                        # AnomalyEvent (in), HealerDecision (LLM output, data only)
+allowlist.py                         # planner: escalate / no-op / execute (pre-flight, not enforcement)
+verifier.py                             # recovery check + pre-action staleness check
+ops_client.py                              # the Healer's only route to changing anything
+db.py                                          # incidents, agent_decisions
+config.py, main.py
 ```
 
-- **Loop:** subscribe `anomaly.detected` → gather context → call LLM →
-  validate `HealerDecision` against schema and allowlist → call Ops
-  Controller → verify → persist → publish `incident.resolved`.
-- **DB tables owned:** `incidents`, `agent_decisions` (shared with Fraud
-  Agent and Monitor Agent's decision log, keyed by `agent` column).
-- **Calls:** Anthropic API, Ops Controller. Nothing else.
+- **Loop:** subscribe `anomaly.detected` (invalid events logged and
+  dropped) → open incident → gather evidence → LLM proposes (rules if it
+  cannot) → planner → staleness pre-check → Ops Controller → verify (the
+  Monitor's own detector, up to 5 min) → close → publish
+  `incident.resolved`. Every incident ends `resolved` or `failed`; see
+  [ADR-0015](../decisions/ADR-0015-healer-proposes-guards-dispose.md).
+- **DB tables owned:** `incidents`, `agent_decisions` (control-plane
+  tables in `shared/control_plane`, shared with the Monitor and Ops
+  Controller; created under a Postgres advisory lock).
+- **Calls:** Anthropic API (optional), Ops Controller, Jaeger (read-only).
+  Nothing else. Reuses `agents/monitor` detection modules and the Ops
+  Controller's allowlist definition rather than duplicating them.
 
 ## Fraud Agent (`agents/fraud`)
 
@@ -148,21 +156,25 @@ config.py
 - **The freeze threshold is a deterministic number, not an LLM output**
   — see [ADR-0007](../decisions/ADR-0007-deterministic-first-fraud-with-llm-narrative.md).
 
-## Ops Controller (`infra/ops-controller` — internal service)
+## Ops Controller (`agents/ops_controller` — internal service)
 
 ```
-app/
-├── api/          # /ops/actions/*, GET /ops/actions
-├── core/          # settings, allowlist definition
-├── executors/         # one executor per allowed action (breaker call, restart, traffic-shed)
-└── audit.py              # logs every invocation with caller identity + params
+allowlist.py     # the allowlist (pure code) + parameter validation
+api.py              # GET /ops/actions, GET /ops/circuits, one explicit POST route per action
+executors.py           # the actual breaker operations; URLs from static settings only
+audit.py                  # ops_actions row written BEFORE auth/validation/execution
+db.py, config.py, main.py
 ```
 
-- **The allowlist is code, not configuration the LLM can influence** —
-  each entry is `(action_name, target, allowed_params, executor_fn)`,
-  fixed at deploy time.
-- **Called by:** Healer Agent only (enforced via an internal auth token
-  scoped to that one caller).
+- **The allowlist is code, not configuration the LLM can influence.**
+  Implemented: `open-circuit` and `reset-circuit` on Payment's `fraud` /
+  `user` / `provider` breakers. `restart-service` and `shed-traffic` are
+  not implemented (Docker-socket access; Gateway support) — adding one is
+  a reviewed code change.
+- **Called by:** Healer Agent only, via a bearer token (`OPS_HEALER_TOKEN`)
+  that only the Healer holds. Published on the host's loopback only.
+- **Enforcement:** authenticate → audit → validate → per-target cooldown
+  (60s) → execute. Rejected and unauthenticated calls are audited too.
 
 ## Shared Package (`shared/`)
 

@@ -170,20 +170,39 @@ surface. Its output is the `anomaly.detected` event (payload in
 example trace from the evaluation window) and the `anomalies` table.
 `metric` ∈ `{error_rate (fraction), p95_latency (ms), throughput (req/s)}`.
 
-## Ops Controller (internal-only service, never routed by Gateway)
+## Ops Controller (Phase 8, port 8006, internal-only, never routed by Gateway)
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| GET | `/ops/actions` | — | list of allowlisted action names + expected params (used by Healer to build its LLM tool schema) |
-| POST | `/ops/actions/open-circuit` | `{service, dependency}` | `{status, action_id}` |
-| POST | `/ops/actions/reset-circuit` | `{service, dependency}` | `{status, action_id}` |
-| POST | `/ops/actions/shed-traffic` | `{service, percentage}` | `{status, action_id}` |
-| POST | `/ops/actions/restart-service` | `{service}` | `{status, action_id}` |
+| GET | `/ops/actions` | — | the allowlist: action names, param shape, permitted targets |
+| GET | `/ops/circuits` | — | `{fraud, user, provider}` breaker states (read-only view of Payment) |
+| POST | `/ops/actions/open-circuit` | `{service, dependency}` | `{status, action_id, detail}` |
+| POST | `/ops/actions/reset-circuit` | `{service, dependency}` | `{status, action_id, detail}` |
 
-Every call requires a caller identity token scoped to `healer-agent` — no
-other component holds a credential accepted by this service. Every call is
-written to an append-only audit log before execution, including when
-execution is rejected for not matching the allowlist.
+`service` must be `payment`; `dependency` ∈ `{fraud, user, provider}`. Any
+other value, or any extra field, is rejected (400). `shed-traffic` and
+`restart-service` from the Phase 0 design are **not implemented** and have no
+route (404) — see [ADR-0015](../decisions/ADR-0015-healer-proposes-guards-dispose.md).
+
+Every request needs `Authorization: Bearer <OPS_HEALER_TOKEN>`; only the
+Healer holds it (401 otherwise). An action call is written to the
+`ops_actions` audit table (`received`) *before* authentication is acted
+on, validation or execution, then updated to `rejected`, `executed` or
+`failed` — so unauthenticated, malformed and cooldown-blocked calls are
+recorded too (an unknown route 404s before any handler and is not).
+The same action on the same target within 60s is rejected (429). Errors:
+401 unauthenticated, 400 off-allowlist/malformed, 429 cooldown, 503 Payment
+unreachable or refused.
+
+Payment gained a read-only `GET /internal/circuit-breakers` →
+`{fraud, user, provider}` (used only through the Ops Controller).
+
+## Healer Agent (Phase 8, port 8007, never routed by Gateway)
+
+`GET /health`, `GET /ready` only — like the Monitor it is a background loop.
+Input: `anomaly.detected`. Output: `incidents` and `agent_decisions` rows,
+`incident.diagnosing` and `incident.resolved` events, and Ops Controller
+calls.
 
 ## Agents (Monitor, Healer, Fraud Agent)
 

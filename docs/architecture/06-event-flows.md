@@ -74,15 +74,33 @@ request context for an anomaly it didn't directly observe.
 }
 ```
 
+### `incident.diagnosing`
+```json
+{
+  "event": "incident.diagnosing",
+  "incident_id": "uuid",
+  "anomaly_id": "uuid",
+  "service": "payment",
+  "metric": "error_rate",
+  "timestamp": "2026-01-01T00:00:05Z"
+}
+```
+
 ### `incident.resolved`
+Published when an incident is closed out, for any outcome. `outcome` was
+added in Phase 8: `resolved` (verified recovered/contained, or found stale
+and needed no action), `escalated` (nothing the Healer may do; needs a
+human), or `failed` (action not applied, or not verified in time).
 ```json
 {
   "event": "incident.resolved",
   "incident_id": "uuid",
   "anomaly_id": "uuid",
-  "root_cause": "payment-provider sandbox timing out",
-  "action_taken": "open-circuit:payment:provider",
-  "resolved_at": "2026-01-01T00:02:14Z"
+  "outcome": "resolved",
+  "root_cause": "payment failures are caused by its 'provider' dependency",
+  "action_taken": "open-circuit:payment:provider (breaker already open); verified: metric back within thresholds",
+  "resolved_at": "2026-01-01T00:02:14Z",
+  "timestamp": "2026-01-01T00:02:14Z"
 }
 ```
 

@@ -75,18 +75,48 @@ produce "if authenticated then allowed" bugs.
 - **Each service holds a least-privilege database credential**, scoped to
   its own schema only (see [ADR-0006](../decisions/ADR-0006-database-per-service.md)).
 
-## Known Gap
+## Phase 8: The AI-Safety Boundary Is Now Real
 
-Internal service-to-service calls (Payment → Fraud, Payment → User,
-Fraud Agent → User's freeze endpoint once it exists) still have no
-authentication of their own — they rely entirely on network isolation
-(`/internal/*` never being reachable through the Gateway). A caller with
-direct network access to a service's internal port can call it
-unauthenticated. Acceptable for local development and the current
-single-network deployment target; worth a dedicated internal-service
-token (mentioned in `docs/api/api-contracts.md`'s Ops Controller section
-but not yet implemented anywhere else) before this runs on shared
-infrastructure with less network isolation.
+The Ops Controller ([ADR-0005](../decisions/ADR-0005-llm-actions-via-allowlisted-executor.md),
+implemented per [ADR-0015](../decisions/ADR-0015-healer-proposes-guards-dispose.md))
+is the enforcement point between an LLM's output and any state change:
+
+- **Closed action space in code.** Two actions (`open-circuit`,
+  `reset-circuit`) on three named breakers. Anything else — unknown
+  action, extra field, unknown target, path/URL smuggling in a target — is
+  rejected; these cases are unit-tested adversarially.
+- **Authenticated caller.** A bearer token (`OPS_HEALER_TOKEN`, minimum 16
+  characters, compared in constant time) held only by the Healer. The
+  local-dev value in `.env.example` is not a secret; generate your own
+  anywhere else.
+- **Audit before action.** Every call to an action endpoint is recorded in
+  `ops_actions` before anything else, including unauthenticated and
+  rejected calls.
+- **No caller-chosen destinations.** Target URLs come from static settings.
+- **Bounded rate.** Same action on same target: at most once per 60s.
+- **Prompt-injection posture.** Telemetry text reaches the model only as
+  sanitized JSON data, and the model's output is data validated three
+  times (schema, Healer planner, Ops Controller). Even a fully
+  manipulated model can do no more than open or close one of three
+  breakers, at most once a minute each.
+- **Least exposure.** The Ops Controller is published on the host's
+  loopback only.
+
+## Known Gaps
+
+Internal service-to-service calls (Payment → Fraud, Payment → User, Ops
+Controller → Payment's breaker endpoints, Fraud Agent → User's freeze
+endpoint once it exists) still have no authentication of their own — they
+rely entirely on network isolation (`/internal/*` never being reachable
+through the Gateway). A caller with direct network access to a service's
+internal port can call it unauthenticated. Acceptable for local development
+and the current single-network deployment target; worth a dedicated
+internal-service token before this runs on shared infrastructure with less
+network isolation. (The Ops Controller itself is the exception: it does
+authenticate its caller.)
+
+Also: `OPS_HEALER_TOKEN` is a single static shared secret with no rotation
+mechanism; calls to routes that do not exist are not audited.
 
 ## Planned (Phase 12)
 
