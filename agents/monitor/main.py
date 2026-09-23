@@ -8,8 +8,9 @@ from fastapi import FastAPI
 from agents.monitor.agent import MonitorAgent
 from agents.monitor.alert_state import AlertDeduper
 from agents.monitor.config import get_settings
-from agents.monitor.db import Base, engine, is_ready
+from agents.monitor.db import engine, is_ready
 from agents.monitor.metrics_client import JaegerMetricsClient
+from shared.control_plane import init_control_plane_schema
 from shared.events import RedisEventBus
 from shared.exception_handlers import register_exception_handlers
 from shared.health import build_health_router
@@ -38,8 +39,7 @@ def _log_if_task_ended(task: asyncio.Task) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await init_control_plane_schema(engine)
 
     bus = RedisEventBus(settings.redis_url)
     await bus.connect()

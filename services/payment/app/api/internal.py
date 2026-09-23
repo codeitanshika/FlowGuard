@@ -13,6 +13,13 @@ from shared.schemas import Envelope
 router = APIRouter(prefix="/internal", tags=["internal"])
 
 
+@router.get("/circuit-breakers", response_model=Envelope[dict[str, str]])
+async def list_breakers(breakers: dict[str, CircuitBreaker] = Depends(get_breakers)) -> Envelope[dict[str, str]]:
+    # Read-only: lets the Healer (via the Ops Controller) see current
+    # breaker state before deciding whether an action is even needed.
+    return Envelope(data={name: (await b.state()).value for name, b in breakers.items()})
+
+
 @router.post("/circuit-breakers/{dependency}/open", response_model=Envelope[BreakerStatus])
 async def open_breaker(
     dependency: str, breakers: dict[str, CircuitBreaker] = Depends(get_breakers)
