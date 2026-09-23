@@ -205,5 +205,51 @@ services:
     ports:
       - "8005:8005"
 
+  ops-controller:
+    build:
+      context: .
+      dockerfile: agents/ops_controller/Dockerfile
+    env_file: .env
+    environment:
+      OPS_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_control
+      OPS_PAYMENT_SERVICE_URL: http://payment:8001
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    # Bound to the host's loopback only: this is the one component that can
+    # change system state, and it is not meant to be reachable from other
+    # machines. Other containers reach it as ops-controller:8006.
+    ports:
+      - "127.0.0.1:8006:8006"
+
+  healer:
+    build:
+      context: .
+      dockerfile: agents/healer/Dockerfile
+    env_file: .env
+    environment:
+      HEALER_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_control
+      HEALER_JAEGER_QUERY_URL: http://jaeger:16686
+      HEALER_OPS_CONTROLLER_URL: http://ops-controller:8006
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ops-controller:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    ports:
+      - "8007:8007"
+
 volumes:
   flowguard_pg_data:
