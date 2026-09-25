@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from app.core.dependencies import get_breakers, get_fault_injectors
+from app.clients.paypal_provider import PayPalProvider
+from app.clients.paypal_webhooks import PayPalWebhookVerifier, WebhookVerificationError
+from app.core.dependencies import get_breakers, get_fault_injectors, get_paypal_provider, get_paypal_webhook_verifier
 from app.models.schemas import BreakerStatus
 from shared.circuit_breaker import CircuitBreaker
-from shared.errors import NotFoundError
+from shared.errors import NotFoundError, ValidationAppError
 from shared.fault_injection import FaultInjectionRequest, FaultInjector
+from shared.logging import get_logger
 from shared.schemas import Envelope
+
+logger = get_logger(__name__)
 
 # Never routed by the Gateway (see docs/architecture/03-service-boundaries.md)
 # — reachable only on the internal network, by the Ops Controller
@@ -69,3 +74,37 @@ def _resolve_injector(component: str, injectors: dict[str, FaultInjector]) -> Fa
     if component not in injectors:
         raise NotFoundError(f"no fault injector for component '{component}' (expected 'self' or 'provider')")
     return injectors[component]
+
+
+@router.get("/providers/paypal/captures/{capture_id}", response_model=Envelope[dict])
+async def paypal_capture_status(
+    capture_id: str, provider: PayPalProvider = Depends(get_paypal_provider)
+) -> Envelope[dict]:
+    """Status lookup (FR13) — diagnostic use, not on the synchronous
+    capture path (Transaction.status is already the source of truth for
+    that). 404s if PayPal isn't the active provider."""
+    return Envelope(data=await provider.get_capture_status(capture_id))
+
+
+@router.post("/providers/paypal/webhook", response_model=Envelope[dict])
+async def paypal_webhook(
+    request: Request, verifier: PayPalWebhookVerifier = Depends(get_paypal_webhook_verifier)
+) -> Envelope[dict]:
+    """Receives PayPal webhook deliveries (FR13's "webhook handling").
+    Verified via PayPal's own verify-webhook-signature API rather than
+    local certificate/crypto verification — see paypal_webhooks.py.
+    Never routed by the Gateway; PayPal calls this directly, so it can't
+    carry the Gateway's own auth — verification of the PayPal signature
+    headers is what authenticates the caller here instead. 404s if
+    PAYPAL_WEBHOOK_ID isn't configured."""
+    event = await request.json()
+    try:
+        await verifier.verify(dict(request.headers), event)
+    except WebhookVerificationError as exc:
+        logger.warning("payment.paypal_webhook_rejected", error=str(exc))
+        raise ValidationAppError(f"webhook verification failed: {exc}") from exc
+
+    event_type = event.get("event_type", "unknown")
+    resource_id = event.get("resource", {}).get("id")
+    logger.info("payment.paypal_webhook_received", event_type=event_type, resource_id=resource_id)
+    return Envelope(data={"status": "received", "event_type": event_type})

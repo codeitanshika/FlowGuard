@@ -21,10 +21,13 @@ class PaymentProvider(Protocol):
 
 
 class MockPaymentProvider:
-    """Stand-in for a real payment provider sandbox. Phase 10 replaces this
-    with a real Stripe/Razorpay/PayPal client implementing the same
-    PaymentProvider interface — nothing in PaymentOrchestrator changes,
-    only which provider gets constructed in core/dependencies.py.
+    """Stand-in for a real payment provider sandbox — still the default
+    (PAYMENT_PROVIDER_BACKEND=mock) so the existing stack needs no
+    external credentials. Phase 10 adds a real PayPal client
+    (app/clients/paypal_provider.py) implementing this same
+    PaymentProvider interface as a selectable alternative — nothing in
+    PaymentOrchestrator changes, only which provider gets constructed in
+    core/dependencies.py, based on settings.provider_backend.
 
     Deterministic failure trigger (amount == 0.13) exists purely so the
     failure/compensation path is exercisable in tests without randomness

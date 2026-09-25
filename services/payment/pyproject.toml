@@ -29,3 +29,12 @@ dependencies = [
 # packages = [].
 [tool.setuptools]
 packages = []
+
+# Run with: cd services/payment && python -m pytest
+# Separate from the root `python -m pytest` (tests/) — see tests/conftest.py
+# for why this service's tests can't share a pytest session with the
+# others (every service's client code lives under the same `app` package
+# name).
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
