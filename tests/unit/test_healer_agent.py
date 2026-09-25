@@ -205,30 +205,30 @@ async def test_unrecovered_service_fails_the_incident_after_the_timeout(env):
     assert env.db.final[0] == IncidentStatus.failed and "not verified" in env.db.final[2]
 
 
-async def test_no_traffic_to_a_shielded_service_counts_as_contained_when_breaker_holds(env):
-    env.checks.append("no_traffic")
-    # 1st read (planning): closed, so the action runs; later reads: open.
-    gatherer = FakeGatherer([], [{"user": "closed"}, {"user": "open"}])
-    await make_agent(env, gatherer, FakeOps())._handle(anomaly(service="user"))
-
-    assert env.db.final[0] == IncidentStatus.resolved and "contained" in env.db.final[2]
-
-
-async def test_idle_system_is_not_containment_if_the_breaker_is_closed(env):
-    # Silence with a closed breaker just means nobody is calling: no proof.
+async def test_sustained_silence_resolves_a_shielded_incident_even_after_the_breaker_self_heals(env):
+    # Found by a live chaos test: a breaker can close on its own (a
+    # half-open probe against a *partial*-failure fault has a real chance
+    # of succeeding) between one verify check and the next, with no
+    # traffic left to observe either way by the time that happens. This
+    # must still resolve — a version that required the breaker to still
+    # be open here got an incident permanently stuck.
     env.checks.append("no_traffic")
     gatherer = FakeGatherer([], {"user": "closed"})
     await make_agent(env, gatherer, FakeOps())._handle(anomaly(service="user"))
 
-    assert env.db.final[0] == IncidentStatus.failed and "not verified" in env.db.final[2]
+    assert env.db.final[0] == IncidentStatus.resolved and "no reproducing traffic" in env.db.final[2]
 
 
-async def test_no_traffic_is_not_recovery_for_the_calling_service(env):
+async def test_sustained_silence_resolves_for_the_calling_service_too(env):
+    # Not just the shielded-dependency case: a caller like payment with no
+    # traffic to evaluate also has no current evidence of a problem. If the
+    # issue is still real, the Monitor's own re-alert path catches it once
+    # traffic resumes and actually fails again.
     env.checks.append("no_traffic")
     agent = make_agent(env, FakeGatherer([PROVIDER_FACT], {"provider": "closed"}), FakeOps())
     await agent._handle(anomaly(service="payment"))
 
-    assert env.db.final[0] == IncidentStatus.failed
+    assert env.db.final[0] == IncidentStatus.resolved and "no reproducing traffic" in env.db.final[2]
 
 
 async def test_unexpected_crash_still_ends_in_a_terminal_state(env):

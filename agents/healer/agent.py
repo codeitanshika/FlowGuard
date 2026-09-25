@@ -17,7 +17,7 @@ from agents.monitor.metrics_client import JaegerMetricsClient, MetricsUnavailabl
 from agents.monitor.thresholds import resolve_thresholds
 from agents.ops_controller.allowlist import describe_allowlist
 from shared.control_plane import IncidentStatus
-from shared.events import Channels, RedisEventBus
+from shared.events import Channels, RedisEventBus, consume_forever
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -49,19 +49,18 @@ class HealerAgent:
     # --- intake -----------------------------------------------------------
 
     async def run_forever(self) -> None:
-        pubsub = await self._bus.subscribe(Channels.ANOMALY_DETECTED)
-        logger.info("healer.started", channel=Channels.ANOMALY_DETECTED)
-        while True:
-            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if message is None:
-                continue
-            try:
-                anomaly = AnomalyEvent.model_validate_json(message["data"])
-            except ValueError as exc:
-                # Poison event (failure scenario 10): log and drop, never crash.
-                logger.error("event.invalid", error=str(exc)[:300])
-                continue
-            self._spawn(anomaly)
+        await consume_forever(
+            self._bus, Channels.ANOMALY_DETECTED, on_message=self._on_message, service_name="healer"
+        )
+
+    async def _on_message(self, message: dict) -> None:
+        try:
+            anomaly = AnomalyEvent.model_validate_json(message["data"])
+        except ValueError as exc:
+            # Poison event (failure scenario 10): log and drop, never crash.
+            logger.error("event.invalid", error=str(exc)[:300])
+            return
+        self._spawn(anomaly)
 
     def _spawn(self, anomaly: AnomalyEvent) -> None:
         overloaded = len(self._tasks) >= self._settings.max_concurrent_incidents
@@ -237,12 +236,27 @@ class HealerAgent:
     # --- verification -----------------------------------------------------
 
     async def _verify(self, anomaly: AnomalyEvent, chosen: Plan) -> tuple[bool, str]:
+        """"Recovered" means the Monitor would not currently alert on this
+        anomaly — either because the metric is genuinely back within
+        thresholds, or because there has been no traffic to evaluate for
+        two consecutive checks (~30s). The second case is deliberately
+        treated as resolved for any anomaly, not only when the acted-on
+        dependency's breaker is still open: a breaker can legitimately
+        self-heal (a half-open probe against a *partial*-failure fault has
+        a real chance of succeeding) between one verify check and the
+        next, and by the time that happens there is nothing left to
+        observe either way. Requiring the breaker to still be open to
+        accept that silence — an earlier version of this check did —
+        left an incident permanently stuck once the breaker closed on its
+        own with no further traffic: found by a chaos test, not by
+        inspection (see docs/decisions/ADR-0018). If the underlying
+        problem is still real, the Monitor's own re-alert path (a fresh
+        anomaly.detected once traffic resumes and actually fails again)
+        is what catches it — this verifier's job is only to say whether
+        there is current evidence of a problem, not to prove a negative."""
+
         settings = self._settings
         thresholds = resolve_thresholds(anomaly.service, settings.default_thresholds, settings.service_thresholds)
-        # If the failing service *is* the guarded dependency, opening its
-        # breaker cuts its traffic to ~zero — that is the action working,
-        # not missing data. For a caller like payment, silence proves nothing.
-        shielded = chosen.dependency == anomaly.service
         deadline = time.monotonic() + settings.verify_timeout_seconds
         last, quiet_checks = "not checked", 0
 
@@ -258,12 +272,8 @@ class HealerAgent:
             if last == "recovered":
                 return True, "verified: metric back within thresholds"
             quiet_checks = quiet_checks + 1 if last == "no_traffic" else 0
-            if shielded and quiet_checks >= 2:
-                # Silence alone could just be an idle system; it only counts
-                # as containment if the breaker is really still holding.
-                state = ((await self._gatherer.circuits()) or {}).get(chosen.dependency)
-                if state in ("open", "half_open"):
-                    return True, "contained: breaker holding and no traffic reaches the failing service"
+            if quiet_checks >= 2:
+                return True, "resolved: no reproducing traffic — nothing currently observable to fail"
         return False, f"not verified within {settings.verify_timeout_seconds}s (last check: {last})"
 
     # --- closing out ------------------------------------------------------
