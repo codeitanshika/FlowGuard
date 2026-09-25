@@ -251,5 +251,27 @@ services:
     ports:
       - "8007:8007"
 
+  fraud-agent:
+    build:
+      context: .
+      dockerfile: agents/fraud/Dockerfile
+    env_file: .env
+    environment:
+      FRAUD_AGENT_DATABASE_URL: postgresql+asyncpg://flowguard:flowguard@postgres:5432/flowguard_control
+      FRAUD_AGENT_USER_SERVICE_URL: http://user:8003
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      user:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    ports:
+      - "8008:8008"
+
 volumes:
   flowguard_pg_data:
