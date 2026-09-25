@@ -86,6 +86,7 @@ curl http://localhost:8004/health   # notification
 curl http://localhost:8005/health   # monitor agent
 curl http://localhost:8006/health   # ops controller (loopback only)
 curl http://localhost:8007/health   # healer agent
+curl http://localhost:8008/health   # fraud agent
 ```
 
 Workflow A additionally shows container-level health:
@@ -285,6 +286,67 @@ to reset while testing); `429` from the Ops Controller => the same action on
 the same target ran in the last 60s (`OPS_ACTION_COOLDOWN_SECONDS`); an
 incident stuck `remediating` is still verifying (up to 5 min) and is closed
 as failed if the Healer restarts.
+
+## Running the Fraud Agent (Phase 9)
+
+Starts with `docker compose up` (same fresh-volume note as the Monitor/Healer
+— it writes to the shared `flowguard_control` database). With no
+`ANTHROPIC_API_KEY` it uses a rules-based narrative for borderline cases and
+logs `fraud_agent.llm_disabled`.
+
+**Trigger a freeze.** Log in once, create a user, fund it, then send 10+
+payments quickly (the velocity window is 180s by default, so they need to
+land inside it):
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" \
+  -d '{"client_id":"test-merchant","client_secret":"test-secret-123"}' \
+  | python -c "import json,sys; print(json.load(sys.stdin)['data']['access_token'])")
+UID=$(curl -s -X POST http://localhost:8000/api/v1/users -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -d '{"email":"you@example.com","full_name":"You","currency":"USD"}' \
+  | python -c "import json,sys; print(json.load(sys.stdin)['data']['id'])")
+curl -s -X POST "http://localhost:8003/internal/users/$UID/credit" -H "Content-Type: application/json" \
+  -d '{"amount":"1000.00","currency":"USD","transaction_id":"00000000-0000-0000-0000-000000000009"}'
+
+for i in $(seq 1 10); do
+  curl -s -o /dev/null -X POST http://localhost:8000/api/v1/payments -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: fr-$i" \
+    -d "{\"user_id\":\"$UID\",\"amount\":\"1.00\",\"currency\":\"USD\"}"
+done
+
+docker compose logs fraud-agent | grep -E "fraud_agent\.(assessed|flagged_for_review|user_frozen)"
+```
+
+Expected: `level: borderline` starting around the 6th-7th payment (each one
+logged for review, never frozen), then `fraud_agent.user_frozen` at exactly
+the 10th. Confirm the user is actually frozen and further payments are
+rejected:
+
+```bash
+curl -s "http://localhost:8000/api/v1/users/$UID" -H "Authorization: Bearer $TOKEN"   # status: "frozen"
+curl -s -X POST http://localhost:8000/api/v1/payments -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: fr-11" \
+  -d "{\"user_id\":\"$UID\",\"amount\":\"1.00\",\"currency\":\"USD\"}"   # status: "failed", "not active"
+```
+
+Send a few more payments for the same user right away and confirm the
+freeze isn't repeated (one row, not several):
+
+```bash
+docker compose exec postgres psql -U flowguard -d flowguard_user \
+  -c "select action, reason, source, created_at from freeze_events order by created_at"
+docker compose exec postgres psql -U flowguard -d flowguard_control \
+  -c "select agent, executed, decision->>'level' level, decision->>'outcome' outcome from agent_decisions where agent='fraud_agent' order by created_at"
+```
+
+Gotchas: fewer than 6 requests in the 180s window never triggers anything
+(by design — `low` writes nothing); a second burst for the *same* user
+within `FRAUD_AGENT_FREEZE_COOLDOWN_SECONDS` (default 300s) after a freeze
+logs `outcome: skipped_cooldown` instead of freezing again; the geo-anomaly
+signal is simulated (no real location data exists in this system — see
+ADR-0016) and fires for roughly 1 in 10 transactions independent of
+velocity, so an occasional `borderline` on the very first payment for a
+user is expected, not a bug.
 
 ## Viewing Traces in Jaeger
 

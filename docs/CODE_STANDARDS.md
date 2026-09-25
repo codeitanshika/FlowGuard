@@ -181,13 +181,16 @@ control-plane tables — never a direct write to a business service's schema.
   | monitor (agent) | no — deliberate | no | no — deliberate |
   | healer (agent) | no — deliberate | no | no |
   | ops-controller | yes — calls Payment's breaker endpoints | no | no |
+  | fraud-agent (agent) | no — calls User Service, but a freeze is rare/significant enough to find via structured logs instead | no | no — deliberate |
 
   The Monitor calls httpx (Jaeger) and Redis constantly but is not
   instrumented for either: tracing its own polling would feed the
   Monitor's activity back into the telemetry it analyzes. The Healer
   polls Jaeger during verification for the same reason. The Ops Controller
   is instrumented so a remediation's call into Payment is visible in
-  Jaeger.
+  Jaeger. The Fraud Agent's Redis calls (velocity window, freeze cooldown)
+  are as constant and self-referential as the Monitor's polling, so they're
+  exempt for the same reason.
 
 - **Control-plane tables live in one place.** `shared/control_plane`
   defines `anomalies`, `incidents`, `agent_decisions` and `ops_actions` on
