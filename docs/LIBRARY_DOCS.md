@@ -141,15 +141,27 @@ One `ruff.toml` at the repo root applies to every service and agent.
 
 ## pytest
 
-**What it is:** The test framework, with `pytest-asyncio` for async suites,
-split per service/agent into `tests/unit/` and `tests/integration/`, plus a
-repo-level `tests/chaos/` for the fault-injection scenarios in
-[architecture/07-failure-scenarios.md](architecture/07-failure-scenarios.md).
+**What it is:** The test framework, with `pytest-asyncio` in `asyncio_mode
+= "auto"` (root `pyproject.toml`) so async tests need no
+`@pytest.mark.asyncio`. Real structure as of Phase 11, three tiers with
+three different infra requirements — see
+[ADR-0018](decisions/ADR-0018-chaos-testing-measures-real-mttr.md):
+`tests/unit/` (no infra, the default for bare `pytest`), `tests/
+integration/` and `tests/chaos/` (both need `docker compose up`, run as
+their own explicit invocation, skip cleanly if it isn't). One exception
+to "everything lives under the root `tests/`": `services/payment/tests/`
+is its own pytest run (`cd services/payment && python -m pytest`) — every
+service's client code lives under the same `app` package name, so
+Payment's PayPal-client tests can't share a session with the root one.
 
 ```python
-@pytest.mark.asyncio
-async def test_create_payment_debits_balance(payment_orchestrator, user_factory):
-    user = await user_factory(balance=100)
-    result = await payment_orchestrator.create(PaymentRequest(user_id=user.id, amount=25), "idem-1")
-    assert result.status == "completed"
+async def test_high_velocity_freezes_once_and_publishes(env):
+    a = make_agent(env, velocity_count=10)
+    txn = event()
+    await a._handle(txn)
+
+    assert len(a.freeze_client.calls) == 1 and a.freeze_client.calls[0] == txn.user_id
+    assert env.db.rows[0]["executed"] is True and env.db.rows[0]["decision"]["outcome"] == "frozen"
 ```
+(from `tests/unit/test_fraud_agent.py` — no marker needed, fakes injected
+directly rather than pytest fixtures, matching this codebase's style)

@@ -17,26 +17,31 @@ flowguard/
 ├── agents/
 │   ├── monitor/
 │   ├── healer/
-│   └── fraud/
+│   ├── fraud/
+│   └── ops_controller/      # allowlisted action executor, see ADR-0005
+│                            # (lives here, not infra/ — it's a service like the others,
+│                            # just one with no business API; see ADR-0015)
 ├── infra/
-│   ├── ops-controller/      # allowlisted action executor, see ADR-0005
-│   ├── docker/
-│   ├── terraform/
-│   └── deployment/
+│   └── docker/
 ├── shared/
 │   ├── events/
+│   ├── control_plane/       # shared Monitor/Healer/Ops Controller/Fraud Agent tables
 │   ├── schemas/
 │   ├── telemetry/
 │   └── config/
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── chaos/
+├── tests/                   # real as of Phase 11 — see ADR-0018
+│   ├── unit/                     # no infra needed; the default for bare `pytest`
+│   ├── integration/              # needs `docker compose up`
+│   └── chaos/                    # needs `docker compose up` + the test compose override
 ├── docs/
 ├── docker-compose.yml
 ├── .env.example
 └── .github/workflows/
 ```
+
+One exception not shown above: `services/payment/tests/` is its own
+pytest run (`app` is a package name every service shares, so Payment's
+PayPal-client tests can't share a session with the root `tests/`).
 
 ## Folder Structure Per Service
 

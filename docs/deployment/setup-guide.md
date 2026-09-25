@@ -399,6 +399,55 @@ curl http://localhost:8001/internal/providers/paypal/captures/<capture_id>
 To go back to the mock provider, set `PAYMENT_PROVIDER_BACKEND=mock` (or
 remove the line — that's the default) and rebuild Payment Service again.
 
+## Running Integration and Chaos Tests (Phase 11)
+
+Three test tiers, each with a different infra requirement — see
+[ADR-0018](../decisions/ADR-0018-chaos-testing-measures-real-mttr.md):
+
+```bash
+python -m pytest                    # unit — no infra needed, ~5s (the default)
+```
+
+**Integration** (`tests/integration/`) drives the real, running stack over
+its public/internal HTTP APIs — no mocks, no direct DB/Redis access:
+
+```bash
+docker compose up --build -d
+python -m pytest tests/integration -v   # ~1 minute, 17 tests
+```
+
+Covers the payment happy path, idempotency replay, provider declines,
+Gateway auth/authz, the fault-injection safety property from ADR-0013,
+and the Fraud Agent freeze flow — the automated versions of what earlier
+phases verified by hand.
+
+**Chaos** (`tests/chaos/`) additionally needs Postgres/Redis reachable
+from the host, to read authoritative `anomalies`/`incidents` timestamps
+rather than guessing recovery from HTTP behavior — a compose *override*
+publishes those ports, applied only for this:
+
+```bash
+docker compose -f docker-compose.yml -f infra/docker/docker-compose.test.yml \
+  up --build -d
+python -m pytest tests/chaos -v         # ~2-3 minutes, 2 tests
+```
+
+Each test injects a real fault (failure scenarios #1 and #2), drives real
+traffic, and asserts the resulting incident resolves within NFR11's 120s
+budget. For an actual number to quote rather than a pass/fail:
+
+```bash
+python -m tests.chaos.report --runs 3
+```
+
+A real run: both scenarios recovered 100% of the time, mean MTTR
+58-60s. Both suites skip cleanly with an actionable message if their
+prerequisites aren't met — no need to remember which command needs what.
+
+To go back to normal local dev afterward: `docker compose down` (drop
+`-f infra/docker/docker-compose.test.yml` — the override doesn't persist
+on its own) then `docker compose up --build -d` as usual.
+
 ## Viewing Traces in Jaeger
 
 Every service exports spans to Jaeger as of Phase 4. Make the payment

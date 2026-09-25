@@ -32,6 +32,18 @@ headroom over a callee's *retry* duration, not just its single-attempt
 timeout) applies to every row in this table with a retry loop behind it,
 not just this one.
 
+Both are additionally chaos-tested as of Phase 11 (`tests/chaos/`,
+against the live stack, measuring real MTTR from `flowguard_control`'s
+own timestamps) — see
+[ADR-0018](../decisions/ADR-0018-chaos-testing-measures-real-mttr.md). A
+real run: both recovered 100% of the time, mean MTTR 58-60s, well inside
+NFR11's 120s budget — after two bugs that chaos testing itself found
+(no reconnect on a dropped Redis connection; the Healer's incident
+verifier could get permanently stuck once a partially-failing
+dependency's breaker self-healed with no traffic left to observe). The
+other eight scenarios remain design-level only — no automated response
+exists yet to chaos-test for most of them.
+
 ## Design Principle Behind This Table
 
 Every row follows the same shape: **detect via telemetry, contain via a
