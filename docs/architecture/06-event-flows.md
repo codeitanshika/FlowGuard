@@ -48,12 +48,16 @@ request context for an anomaly it didn't directly observe.
 ```
 
 ### `fraud.user_frozen`
+Real as of Phase 9. `risk_assessment_id` is currently always `null` — the
+Fraud Agent's velocity/geo decision is independent of Fraud Service's
+synchronous per-transaction score, so there is no assessment row to link
+to yet (a future correlation is possible but not implemented).
 ```json
 {
   "event": "fraud.user_frozen",
   "user_id": "uuid",
-  "reason": "velocity anomaly: 14 transactions in 3 minutes",
-  "risk_assessment_id": "uuid",
+  "reason": "10 transactions in the last 180s (threshold 10)",
+  "risk_assessment_id": null,
   "trace_id": "hex",
   "timestamp": "2026-01-01T00:00:00Z"
 }
@@ -155,21 +159,33 @@ This is the flow Phase 6/7/8 will demonstrate live:
 
 ## End-to-End Flow: Fraud Freeze
 
+Real and live-verified as of Phase 9 (see [ADR-0016](../decisions/ADR-0016-fraud-agent-simulation-and-freeze-cooldown.md)):
+
 ```
 1. Payment Service persists a transaction and publishes payment.created.
 2. Fraud Agent consumes it, adds the transaction to the user's Redis
-   velocity window, and recomputes the deterministic velocity score.
-3. If the deterministic score alone crosses the high-risk threshold, the
-   Fraud Agent proceeds directly to step 5 (no LLM call needed).
-4. If the score is in the borderline band, the Fraud Agent calls the LLM
-   for a narrative/second opinion — the LLM output only ever supplies the
-   *rationale text* and a *confidence signal*, never the freeze/no-freeze
-   decision itself (see ADR-0007).
-5. If the combined deterministic decision is "high risk," the Fraud Agent
-   calls User Service's internal freeze endpoint synchronously.
-6. User Service updates `users.status = 'frozen'`, writes a
+   velocity window (key velocity:{user_id}), and gets back the count in
+   the last window_seconds (default 180s). It also computes a simulated
+   geo-anomaly signal, deterministic per transaction id.
+3. risk.decide(velocity_count, geo_anomaly) is the one place the level is
+   decided — high/borderline/low — and nothing downstream can change it.
+4a. level == "high": the Fraud Agent skips the LLM entirely (no call
+    needed — the deterministic rule already has a confident answer) and
+    calls User Service's internal freeze endpoint synchronously, unless a
+    freeze for this user already happened within the cooldown window (in
+    which case it's a no-op, logged, so a burst of high-velocity events
+    doesn't spam a freeze_events row per event).
+4b. level == "borderline" (velocity in the borderline band, or a geo
+    anomaly alone): the Fraud Agent calls the LLM for a narrative/second
+    opinion (falls back to a rules-based rationale if the LLM is
+    unavailable or fails) and writes it to agent_decisions for human
+    review. This never calls the freeze endpoint — there is no path from
+    a narrative, however confident, back into the freeze decision.
+4c. level == "low": nothing is written; this is the common case for
+    normal traffic.
+5. (high only) User Service updates `users.status = 'frozen'`, writes a
    `freeze_events` row, and returns success.
-7. Fraud Agent publishes fraud.user_frozen.
-8. Notification Service consumes it and notifies the user their account
-   was frozen and why.
+6. (high only) Fraud Agent publishes fraud.user_frozen.
+7. (high only) Notification Service consumes it and notifies the user
+   their account was frozen and why.
 ```

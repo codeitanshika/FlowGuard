@@ -21,3 +21,4 @@ the order they were made; a superseded ADR is marked, never deleted.
 | [0013](ADR-0013-bounded-fault-injection.md) | Fault injection is bounded in duration, intensity, and reach by construction |
 | [0014](ADR-0014-monitor-derives-metrics-from-jaeger-traces.md) | The Monitor Agent derives metrics from Jaeger traces, with deterministic thresholds |
 | [0015](ADR-0015-healer-proposes-guards-dispose.md) | The Healer proposes, independent guards dispose (layered guards, rule fallback, staleness check) |
+| [0016](ADR-0016-fraud-agent-simulation-and-freeze-cooldown.md) | Fraud Agent: simulated geo signal, borderline never freezes, freeze cooldown |

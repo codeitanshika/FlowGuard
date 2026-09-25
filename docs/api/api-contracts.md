@@ -204,6 +204,17 @@ Input: `anomaly.detected`. Output: `incidents` and `agent_decisions` rows,
 `incident.diagnosing` and `incident.resolved` events, and Ops Controller
 calls.
 
+## Fraud Agent (Phase 9, port 8008, never routed by Gateway)
+
+`GET /health`, `GET /ready` only — another background loop. Input:
+`payment.created`. Output: `agent_decisions` rows (`high` and `borderline`
+only — `low` writes nothing), a call to User Service's
+`/internal/users/{id}/freeze` (`high` only, cooldown-bounded — see
+[ADR-0016](../decisions/ADR-0016-fraud-agent-simulation-and-freeze-cooldown.md)),
+and `fraud.user_frozen` (`high` only). A `borderline` verdict never calls
+freeze, regardless of the LLM narrative's confidence — its output schema
+has no field that could express a decision.
+
 ## Agents (Monitor, Healer, Fraud Agent)
 
 Expose only `GET /health`. They have no other public API surface — their

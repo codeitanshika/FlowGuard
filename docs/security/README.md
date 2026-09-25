@@ -102,6 +102,19 @@ is the enforcement point between an LLM's output and any state change:
 - **Least exposure.** The Ops Controller is published on the host's
   loopback only.
 
+## Phase 9: The Fraud Agent's LLM Has No Decision to Make
+
+A different, stronger shape of the same principle behind the Ops
+Controller: the Fraud Agent's LLM output schema (`FraudNarrative`) has
+only `rationale` and `confidence` fields. There is no action field for a
+freeze decision to hide in, so "the LLM proposes a freeze and something
+downstream must reject it" is not a failure mode this component has —
+the schema itself cannot carry one. See
+[ADR-0016](../decisions/ADR-0016-fraud-agent-simulation-and-freeze-cooldown.md).
+The freeze mutation itself still only happens through User Service's
+`/internal/users/{id}/freeze`, called with the deterministic reason as
+the record.
+
 ## Known Gaps
 
 Internal service-to-service calls (Payment → Fraud, Payment → User, Ops

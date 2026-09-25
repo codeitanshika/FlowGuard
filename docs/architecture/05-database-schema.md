@@ -171,10 +171,12 @@ CREATE TABLE agent_decisions (
 `agent_decisions` is deliberately generic enough to log a Healer decision
 *or* a Fraud Agent decision — this is the table Phase 14/15 read from for
 LLM cost/latency tracking and evaluation accuracy metrics, so it's modeled
-now rather than bolted on later. As built, the Healer is its first writer
-(`agent` = `healer`, `llm_*` null when the deterministic rules decided);
-the Monitor writes only `anomalies`, since its decisions involve no LLM and
-the anomaly row is already its full audit record
+now rather than bolted on later. As built, both the Healer (`agent = 'healer'`, `incident_id` set) and the
+Fraud Agent (`agent = 'fraud_agent'`, `incident_id` always null — a Fraud
+Agent decision isn't tied to a Healer incident) write here, `llm_*` null
+whenever the deterministic rules decided instead of the LLM. The Monitor
+writes only `anomalies`, since its decisions involve no LLM and the
+anomaly row is already its full audit record
 ([ADR-0014](../decisions/ADR-0014-monitor-derives-metrics-from-jaeger-traces.md)).
 
 Added in Phase 8 (not in the original Phase 0 design) — the Ops Controller's
@@ -205,8 +207,9 @@ start together).
 |---|---|---|
 | `breaker:{service}:{dependency}` | circuit breaker state (`closed`/`open`/`half_open`) + failure count | none (explicit transitions) |
 | `ratelimit:{client_id}:{window}` | Gateway rate-limit counters | window length |
-| `velocity:{user_id}` | Fraud Agent sliding-window transaction timestamps | rolling, e.g. 1h |
+| `velocity:{user_id}` | Fraud Agent sliding-window transaction timestamps (sorted set, member=transaction id) | rolling, ~2x `FRAUD_AGENT_THRESHOLDS.window_seconds` (default 180s) |
 | `idempotency:lock:{key}` | short-lived lock to prevent concurrent duplicate processing of the same idempotency key | seconds |
+| `fraud:freeze_cooldown:{user_id}` | Fraud Agent per-user freeze cooldown (ADR-0016) | `FRAUD_AGENT_FREEZE_COOLDOWN_SECONDS` (300) |
 | `fault:{service}:{component}` | injected fault config (ADR-0013) | the fault's `duration_seconds` |
 | `monitor:alert:{service}:{metric}` | Monitor alert-dedupe cooldown (ADR-0014) | `MONITOR_ALERT_COOLDOWN_SECONDS` (120) |
 | `ops:cooldown:{action}:{service}:{dependency}` | Ops Controller per-target action cooldown | `OPS_ACTION_COOLDOWN_SECONDS` (60) |

@@ -137,24 +137,31 @@ config.py, main.py
 ## Fraud Agent (`agents/fraud`)
 
 ```
-agent.py             # main loop: subscribe payment.created -> handle
-velocity.py              # Redis sliding-window transaction counting
-geo.py                       # simulated geo-anomaly check
-risk.py                          # combines deterministic signals into a risk decision
-narrative.py                        # LLM call for the human-readable rationale only
-schemas.py                             # FraudAgentDecision pydantic model
-db.py                                      # persist agent_decisions
-config.py
+agent.py             # subscribe payment.created; velocity + geo -> risk.decide() -> act
+velocity.py              # Redis sliding-window transaction counting (key: velocity:{user_id})
+geo.py                       # simulated geo-anomaly check (deterministic, stateless — ADR-0016)
+risk.py                          # the one place freeze/review/nothing is decided (ADR-0007)
+narrative.py                        # LLM call for rationale/confidence only; rules fallback
+freeze_client.py                       # the agent's only route to changing anything
+schemas.py                                # PaymentCreatedEvent (in), FraudNarrative (LLM out, no action field)
+thresholds.py                                # velocity window + high/borderline counts
+db.py, config.py, main.py
 ```
 
-- **Loop:** subscribe `payment.created` → update velocity window → compute
-  deterministic risk factors → if borderline, ask LLM for a narrative/
-  second opinion → if high risk, call User Service's freeze endpoint →
-  publish `fraud.user_frozen`.
-- **DB tables owned:** shares `agent_decisions`; velocity counters live in
-  Redis, not Postgres.
+- **Loop:** subscribe `payment.created` (invalid events logged and
+  dropped) → update the velocity window → compute the simulated geo
+  signal → `risk.decide()` → `high`: call User Service's freeze endpoint
+  (cooldown-bounded, [ADR-0016](../decisions/ADR-0016-fraud-agent-simulation-and-freeze-cooldown.md))
+  and publish `fraud.user_frozen`; `borderline`: LLM or rules narrative,
+  logged to `agent_decisions`, **never** freezes; `low`: nothing
+  persisted.
+- **DB tables owned:** shares `agent_decisions` (control-plane table in
+  `shared/control_plane`, `agent = 'fraud_agent'`, `incident_id` always
+  null); velocity counters live in Redis, not Postgres.
 - **The freeze threshold is a deterministic number, not an LLM output**
   — see [ADR-0007](../decisions/ADR-0007-deterministic-first-fraud-with-llm-narrative.md).
+  The LLM's output schema has no field that could express a freeze
+  decision at all, not just code that would ignore one.
 
 ## Ops Controller (`agents/ops_controller` — internal service)
 
