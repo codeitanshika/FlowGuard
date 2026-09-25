@@ -113,9 +113,13 @@ capability into the Healer Agent.
 ## Payment Provider Sandbox
 
 **External.** Owns nothing in FlowGuard. Accessed only through Payment
-Service's provider abstraction (see Phase 10), so the concrete provider
-(Stripe/Razorpay/PayPal) is swappable without touching Payment Service's
-core orchestration logic.
+Service's provider abstraction, so the concrete provider is swappable
+without touching Payment Service's core orchestration logic — proven in
+Phase 10, which added a real PayPal backend alongside the original mock
+one with zero changes to `PaymentOrchestrator`, the circuit breaker, or
+fault injection. See [ADR-0017](../decisions/ADR-0017-paypal-as-the-real-provider-backend.md)
+for what "real" means here: genuine sandbox calls, scoped to what a
+system with no buyer-redirect step can actually do.
 
 ## Synchronous vs. Asynchronous Call Summary
 

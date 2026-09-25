@@ -89,7 +89,7 @@ The two loops only touch at narrow, well-defined points: telemetry flowing out o
 | **Healer Agent** | Turns a detected anomaly into a bounded, auditable corrective action. Deliberately separate from Monitor so detection and remediation can be reasoned about, tested, and evolved independently. |
 | **Fraud Agent** | Turns the Fraud Service's raw signal plus behavioral context (velocity, geo) into a freeze decision and narrative. Kept separate from Fraud Service's synchronous scoring so slower, LLM-backed reasoning never blocks a payment request. |
 | **Ops Controller** | The single, narrow, allowlisted surface that turns a Healer decision into a real infrastructure action. Exists specifically so no AI-produced output ever reaches a shell or Docker socket directly. See [ADR-0005](../decisions/ADR-0005-llm-actions-via-allowlisted-executor.md). |
-| **Payment Provider Sandbox** | The external system being integrated against, abstracted behind an interface so the specific provider is a swappable implementation detail (see Phase 10), not baked into Payment Service's core logic. |
+| **Payment Provider Sandbox** | PayPal's real sandbox (Phase 10), behind the `PaymentProvider` interface so it's a swappable implementation detail, not baked into Payment Service's core logic — selected server-side via `PAYMENT_PROVIDER_BACKEND` (default `mock`, no secrets needed for the rest of the stack). See [ADR-0017](../decisions/ADR-0017-paypal-as-the-real-provider-backend.md). |
 
 ## Request Path (Happy Path)
 

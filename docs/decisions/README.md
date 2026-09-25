@@ -22,3 +22,4 @@ the order they were made; a superseded ADR is marked, never deleted.
 | [0014](ADR-0014-monitor-derives-metrics-from-jaeger-traces.md) | The Monitor Agent derives metrics from Jaeger traces, with deterministic thresholds |
 | [0015](ADR-0015-healer-proposes-guards-dispose.md) | The Healer proposes, independent guards dispose (layered guards, rule fallback, staleness check) |
 | [0016](ADR-0016-fraud-agent-simulation-and-freeze-cooldown.md) | Fraud Agent: simulated geo signal, borderline never freezes, freeze cooldown |
+| [0017](ADR-0017-paypal-as-the-real-provider-backend.md) | PayPal as the real provider backend, selected server-side, scoped to its redirect-less reality |

@@ -103,9 +103,14 @@ frozen account.
 | POST | `/internal/recover` | **yes** | — | `{status: "recovered" \| "unchanged"}` |
 | POST | `/internal/fault-injection` | **yes** | `{mode, error_rate?, latency_ms?, duration_seconds?, component?}` | `{status, component}` |
 | DELETE | `/internal/fault-injection` | **yes** | — (`?component=`) | `{status, component}` |
+| GET | `/internal/providers/paypal/captures/{capture_id}` | **yes** | — | PayPal's capture status (404 unless `PAYMENT_PROVIDER_BACKEND=paypal`) |
+| POST | `/internal/providers/paypal/webhook` | **yes** | PayPal webhook event | `{status, event_type}` (404 unless `PAYPAL_WEBHOOK_ID` is also set) |
 
 `PaymentRequest`: `{user_id, amount, currency}`
-`PaymentResponse`: `{id, user_id, amount, currency, status, provider, provider_reference, failure_reason, created_at}`
+`PaymentResponse`: `{id, user_id, amount, currency, status, provider, provider_reference, failure_reason, created_at}`.
+`provider` ∈ `{mock, paypal}` as of Phase 10, reflecting whichever backend
+was active when the transaction was created — see
+[ADR-0017](../decisions/ADR-0017-paypal-as-the-real-provider-backend.md).
 
 `dependency` for breaker endpoints ∈ `{fraud, user, provider}`.
 
@@ -118,10 +123,12 @@ no HTTP surface of its own for middleware to sit in front of.
 `provider` dropped out of `PaymentRequest` during Phase 1 implementation:
 with only one configured provider (`MockPaymentProvider`) there was
 nothing for a client-supplied value to select between, and accepting-but-
-silently-ignoring a field is worse than not accepting it. `provider`
-returns in the request once Phase 10 makes provider selection real; until
-then it's server-side config, not client input — see
-`services/payment/app/models/schemas.py`.
+silently-ignoring a field is worse than not accepting it. Phase 10 made
+provider selection real (`PAYMENT_PROVIDER_BACKEND`) but deliberately
+kept it server-side rather than adding `provider` back to the request —
+see [ADR-0017](../decisions/ADR-0017-paypal-as-the-real-provider-backend.md)
+decision 2 for why: a merchant backend's payment rail is a deployment
+choice, not a per-request one.
 
 `/internal/circuit-breakers/{dependency}/open` and `/reset` are real as
 of Phase 5 — `force_open()`/`reset()` on the named `CircuitBreaker`
