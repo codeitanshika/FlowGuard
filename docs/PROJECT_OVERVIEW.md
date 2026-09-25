@@ -40,8 +40,10 @@ socket directly. Every decision is logged for audit.
   decision.
 - A controlled fault-injection mode to demonstrate self-healing behavior
   on demand.
-- A real payment provider sandbox integration behind a swappable
-  abstraction.
+- A real payment provider sandbox integration (PayPal) behind a
+  swappable abstraction — proven swappable, not just designed that way:
+  Phase 10 added it alongside the original mock provider with zero
+  changes to the orchestrator, the circuit breaker, or fault injection.
 
 ## Target Companies and How to Switch
 
@@ -75,7 +77,7 @@ demonstrates the patterns at portfolio scale, not production scale.
 - **Services:** 5 (`gateway`, `payment`, `fraud`, `user`, `notification`)
 - **Agents:** 3 (`monitor`, `healer`, `fraud`)
 - **Safety-critical control component:** 1 (Ops Controller — allowlisted action executor)
-- **Payment providers integrated:** 1 real sandbox (Phase 10), behind a provider-swappable abstraction
+- **Payment providers integrated:** 1 real sandbox — PayPal (Phase 10) — plus the original mock, both behind the same provider-swappable abstraction
 - **Build phases:** 15 (see [ROADMAP.md](ROADMAP.md))
 - **Core infra dependencies:** Redis, PostgreSQL, OpenTelemetry Collector, Jaeger
 - **Primary language:** Python 3.12 (FastAPI, asyncpg, httpx)

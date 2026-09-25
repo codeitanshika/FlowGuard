@@ -10,11 +10,11 @@ what you're doing.
 - Docker and Docker Compose (v2+)
 - Python 3.12+ and a virtualenv tool, only needed for Workflow B (running
   services directly on the host)
-- An account with the chosen payment provider sandbox (provider selected
-  in Phase 10 — PayPal, Razorpay, or Stripe; kept behind an abstraction so
-  this section will be filled in with concrete steps once that decision is
-  made)
-- An Anthropic API key (for the Healer and Fraud agents, from Phase 8/9)
+- Optional: a PayPal Developer sandbox account (Phase 10) — only needed to
+  run with `PAYMENT_PROVIDER_BACKEND=paypal`; the default (`mock`) needs
+  nothing here
+- An Anthropic API key (for the Healer and Fraud agents, from Phase 8/9) —
+  also optional, both fall back to deterministic rules without one
 
 ## Environment Variables Explained
 
@@ -347,6 +347,57 @@ signal is simulated (no real location data exists in this system — see
 ADR-0016) and fires for roughly 1 in 10 transactions independent of
 velocity, so an occasional `borderline` on the very first payment for a
 user is expected, not a bug.
+
+## Running with the Real PayPal Provider (Phase 10)
+
+By default (`PAYMENT_PROVIDER_BACKEND=mock`, no PayPal account needed) the
+stack behaves exactly as in every earlier phase. To exercise the real
+integration instead:
+
+1. Create a sandbox app at
+   [developer.paypal.com/dashboard/applications/sandbox](https://developer.paypal.com/dashboard/applications/sandbox)
+   and copy its Client ID and Secret.
+2. In `.env`, set:
+   ```
+   PAYMENT_PROVIDER_BACKEND=paypal
+   PAYPAL_CLIENT_ID=<your sandbox client id>
+   PAYPAL_CLIENT_SECRET=<your sandbox secret>
+   ```
+3. Rebuild just Payment Service: `docker compose up --build -d payment`.
+   With `provider_backend=paypal` and no credentials set, the container
+   won't start at all (`PAYMENT_PROVIDER_BACKEND=paypal requires
+   PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET`) — that's the intended
+   fail-fast behavior, not a bug.
+
+Send a normal payment (see "A Full Request, End to End" above) and check
+`"provider"` in the response — it now says `"paypal"`. **A real capture
+today always declines** with `failure_reason` mentioning `ORDER_NOT_APPROVED`
+or similar: this system has no buyer-approval redirect step anywhere, and
+PayPal's Orders API genuinely requires one for a wallet-style order with
+no payment source — see
+[ADR-0017](../decisions/ADR-0017-paypal-as-the-real-provider-backend.md).
+This is PayPal correctly declining, not a broken integration: watch
+`docker compose logs payment` for the real HTTPS calls to
+`api-m.sandbox.paypal.com`, and confirm the transaction is marked
+`failed` with a real PayPal error message, not a connection error.
+
+Two supporting endpoints, both 404 unless `paypal` is the active backend:
+
+```bash
+# Status lookup (FR13) — needs a real capture id, so this 404s on its own
+# fault (RESOURCE_NOT_FOUND) unless you have one from a successful capture.
+curl http://localhost:8001/internal/providers/paypal/captures/<capture_id>
+
+# Webhook receiver — additionally needs PAYPAL_WEBHOOK_ID (create a webhook
+# for your sandbox app in the same dashboard, subscribed to at least
+# PAYMENT.CAPTURE.COMPLETED, and set PAYPAL_WEBHOOK_ID to its id). PayPal
+# calls this directly (it's never routed by the Gateway); the request's
+# own PAYPAL-* signature headers are what authenticate it, verified via
+# PayPal's own /v1/notifications/verify-webhook-signature endpoint.
+```
+
+To go back to the mock provider, set `PAYMENT_PROVIDER_BACKEND=mock` (or
+remove the line — that's the default) and rebuild Payment Service again.
 
 ## Viewing Traces in Jaeger
 
