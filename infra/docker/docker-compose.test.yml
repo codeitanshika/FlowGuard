@@ -1,0 +1,25 @@
+# Override for tests/chaos/ only — publishes Postgres and Redis to the
+# host so chaos tests can read authoritative MTTR timestamps
+# (anomalies.detected_at, incidents.resolved_at) directly from
+# flowguard_control, rather than trying to infer "did the Healer actually
+# resolve this incident" from black-box HTTP behavior alone.
+#
+# Deliberately NOT part of the default `docker compose up` — publishing
+# database ports by default would risk colliding with a host Postgres/
+# Redis already using 5432/6379, and most of the time nothing needs it
+# (tests/integration/ never does). Apply it only when running chaos
+# tests:
+#
+#   docker compose -f docker-compose.yml -f infra/docker/docker-compose.test.yml up --build -d
+#   python -m pytest tests/chaos -v
+#
+# Everything else about the stack is identical; this file only adds two
+# port mappings.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+  redis:
+    ports:
+      - "6379:6379"
