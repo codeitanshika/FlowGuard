@@ -1,10 +1,15 @@
 # Root-level: test tooling config only, not a package — each service has
 # its own pyproject.toml for its actual runtime dependencies (see
 # docs/CODE_STANDARDS.md). Run tests from the repo root with:
-#   python -m pytest
+#   python -m pytest                    # unit only — no infra needed (default)
+#   python -m pytest tests/integration  # needs `docker compose up --build -d`
+#   python -m pytest tests/chaos        # needs the stack + infra/docker/docker-compose.test.yml
+# testpaths deliberately covers only tests/unit — see
+# docs/deployment/setup-guide.md's "Running Integration and Chaos Tests"
+# for why integration/chaos aren't part of the default, infra-free `pytest`.
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests/unit"]
 # So bare `pytest` (not just `python -m pytest`) can import shared/ and agents/.
 pythonpath = ["."]
