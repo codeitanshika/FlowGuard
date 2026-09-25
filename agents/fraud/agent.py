@@ -11,7 +11,7 @@ from agents.fraud.narrative import Narrator, PROMPT_VERSION
 from agents.fraud.risk import decide
 from agents.fraud.schemas import PaymentCreatedEvent
 from agents.fraud.velocity import VelocityTracker
-from shared.events import Channels, RedisEventBus
+from shared.events import Channels, RedisEventBus, consume_forever
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,13 +41,12 @@ class FraudAgent:
         self._redis = cooldown_redis
 
     async def run_forever(self) -> None:
-        pubsub = await self._bus.subscribe(Channels.PAYMENT_CREATED)
-        logger.info("fraud_agent.started", channel=Channels.PAYMENT_CREATED)
-        while True:
-            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if message is None:
-                continue
-            await self.process_raw_message(message["data"])
+        await consume_forever(
+            self._bus, Channels.PAYMENT_CREATED, on_message=self._on_message, service_name="fraud_agent"
+        )
+
+    async def _on_message(self, message: dict) -> None:
+        await self.process_raw_message(message["data"])
 
     async def process_raw_message(self, data: str) -> None:
         try:

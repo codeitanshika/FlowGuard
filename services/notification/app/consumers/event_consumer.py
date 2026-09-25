@@ -5,7 +5,7 @@ from opentelemetry import trace
 
 from app.db.session import SessionLocal
 from app.services import dispatcher
-from shared.events import Channels, RedisEventBus
+from shared.events import Channels, RedisEventBus, consume_forever
 from shared.logging import get_logger
 from shared.telemetry import current_trace_id, extract_context
 
@@ -40,34 +40,36 @@ async def run_consumer(bus: RedisEventBus) -> None:
     positional arg named `event`; passing a keyword also named `event`
     raises TypeError, and if that TypeError happens inside this loop's own
     except-Exception handler, it kills the loop with no useful log output
-    to explain why — this cost real debugging time once already."""
+    to explain why — this cost real debugging time once already.
 
-    pubsub = await bus.subscribe(
-        Channels.PAYMENT_COMPLETED, Channels.PAYMENT_FAILED, Channels.FRAUD_USER_FROZEN
+    Resubscribes automatically if the Redis connection itself drops (see
+    shared/events/consumer.py and docs/decisions/ADR-0018) — a transient
+    Redis blip used to kill this task permanently, silently, while
+    /health kept reporting the process as healthy."""
+
+    await consume_forever(
+        bus,
+        Channels.PAYMENT_COMPLETED, Channels.PAYMENT_FAILED, Channels.FRAUD_USER_FROZEN,
+        on_message=_handle_message,
+        service_name="notification",
     )
-    logger.info("consumer.started", channels=[
-        Channels.PAYMENT_COMPLETED, Channels.PAYMENT_FAILED, Channels.FRAUD_USER_FROZEN
-    ])
 
-    while True:
-        message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-        if message is None:
-            continue
 
+async def _handle_message(message: dict) -> None:
+    try:
+        payload = json.loads(message["data"])
+    except (json.JSONDecodeError, TypeError) as exc:
+        logger.error("event.invalid", error=str(exc), raw=message.get("data"))
+        return
+
+    event_type = payload.get("event", "unknown")
+    parent_context = extract_context(payload)
+
+    with tracer.start_as_current_span(f"notification.consume.{event_type}", context=parent_context):
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(trace_id=current_trace_id(), service="notification")
         try:
-            payload = json.loads(message["data"])
-        except (json.JSONDecodeError, TypeError) as exc:
-            logger.error("event.invalid", error=str(exc), raw=message.get("data"))
-            continue
-
-        event_type = payload.get("event", "unknown")
-        parent_context = extract_context(payload)
-
-        with tracer.start_as_current_span(f"notification.consume.{event_type}", context=parent_context):
-            structlog.contextvars.clear_contextvars()
-            structlog.contextvars.bind_contextvars(trace_id=current_trace_id(), service="notification")
-            try:
-                async with SessionLocal() as db:
-                    await dispatcher.dispatch(db, event_type, payload)
-            except Exception as exc:  # noqa: BLE001 - consumer loop must never die
-                logger.error("event.processing_failed", event_type=event_type, error=str(exc))
+            async with SessionLocal() as db:
+                await dispatcher.dispatch(db, event_type, payload)
+        except Exception as exc:  # noqa: BLE001 - consumer loop must never die
+            logger.error("event.processing_failed", event_type=event_type, error=str(exc))
