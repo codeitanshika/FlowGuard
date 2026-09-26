@@ -89,8 +89,12 @@ class FakeRedis:
 
 def event(amount="1.00") -> PaymentCreatedEvent:
     return PaymentCreatedEvent(
-        event="payment.created", transaction_id=uuid.uuid4(), user_id=uuid.uuid4(),
-        amount=amount, currency="USD", trace_id="t1",
+        event="payment.created",
+        transaction_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        amount=amount,
+        currency="USD",
+        trace_id="t1",
     )
 
 
@@ -98,6 +102,10 @@ def event(amount="1.00") -> PaymentCreatedEvent:
 def env(monkeypatch):
     fake_db = FakeDb()
     monkeypatch.setattr(agent_module, "db", fake_db)
+    # The simulated geo signal fires for ~1 in 10 random UUIDs; with random
+    # ids every test here would flake ~10% of the time. Off by default —
+    # tests that exercise geo re-patch it explicitly.
+    monkeypatch.setattr(agent_module, "is_geo_anomaly", lambda *a, **k: (False, "US", "US"))
     return SimpleNamespace(db=fake_db, bus=FakeBus(), redis=FakeRedis())
 
 
@@ -105,9 +113,7 @@ def make_agent(env, velocity_count, freeze_error=None, narrative=None, threshold
     settings = SimpleNamespace(thresholds=thresholds or VelocityThresholds(), freeze_cooldown_seconds=300)
     freeze_client = FakeFreezeClient(freeze_error)
     narrator = FakeNarrator(narrative)
-    a = FraudAgent(
-        settings, env.bus, FakeVelocity(velocity_count), freeze_client, narrator, env.redis
-    )
+    a = FraudAgent(settings, env.bus, FakeVelocity(velocity_count), freeze_client, narrator, env.redis)
     a.freeze_client, a.narrator = freeze_client, narrator  # test-only handles
     return a
 
@@ -156,8 +162,12 @@ async def test_borderline_narrative_never_escalates_the_freeze_decision(env):
 async def test_repeated_high_risk_for_the_same_user_is_cooled_down(env):
     a = make_agent(env, velocity_count=10)
     user_id = uuid.uuid4()
-    first = PaymentCreatedEvent(event="payment.created", transaction_id=uuid.uuid4(), user_id=user_id, amount="1", currency="USD")
-    second = PaymentCreatedEvent(event="payment.created", transaction_id=uuid.uuid4(), user_id=user_id, amount="1", currency="USD")
+    first = PaymentCreatedEvent(
+        event="payment.created", transaction_id=uuid.uuid4(), user_id=user_id, amount="1", currency="USD"
+    )
+    second = PaymentCreatedEvent(
+        event="payment.created", transaction_id=uuid.uuid4(), user_id=user_id, amount="1", currency="USD"
+    )
 
     await a._handle(first)
     await a._handle(second)
