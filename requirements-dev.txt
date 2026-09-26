@@ -5,25 +5,25 @@
 # Each service's own pyproject.toml lists only what that service actually
 # uses — Phase 3's per-service Dockerfiles install from those, not this file.
 
-fastapi>=0.115
-uvicorn[standard]>=0.30
-sqlalchemy[asyncio]>=2.0
-asyncpg>=0.29
-pydantic>=2.7
-pydantic-settings>=2.3
-email-validator>=2.1
-httpx>=0.27
-redis>=5.0
-structlog>=24.1
-pyjwt>=2.9
-bcrypt>=4.2
-anthropic>=1.0
-opentelemetry-api>=1.27
-opentelemetry-sdk>=1.27
-opentelemetry-exporter-otlp-proto-http>=1.27
-opentelemetry-instrumentation-fastapi>=0.48b0
-opentelemetry-instrumentation-httpx>=0.48b0
-opentelemetry-instrumentation-sqlalchemy>=0.48b0
-opentelemetry-instrumentation-redis>=0.48b0
-pytest>=8.0
-pytest-asyncio>=0.24
+fastapi>=0.141.1
+uvicorn[standard]>=0.53.0
+sqlalchemy[asyncio]>=2.0.54
+asyncpg>=0.31.0
+pydantic>=2.13.5
+pydantic-settings>=2.15.0
+email-validator>=2.3.0
+httpx>=0.28.1
+redis>=8.1.0
+structlog>=26.1.0
+pyjwt>=2.15.0
+bcrypt>=5.0.0
+anthropic>=1.8.0
+opentelemetry-api>=1.44.0
+opentelemetry-sdk>=1.44.0
+opentelemetry-exporter-otlp-proto-http>=1.44.0
+opentelemetry-instrumentation-fastapi>=0.65b0
+opentelemetry-instrumentation-httpx>=0.65b0
+opentelemetry-instrumentation-sqlalchemy>=0.65b0
+opentelemetry-instrumentation-redis>=0.65b0
+pytest>=9.1.1
+pytest-asyncio>=1.4.0
