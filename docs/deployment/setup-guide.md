@@ -448,6 +448,60 @@ To go back to normal local dev afterward: `docker compose down` (drop
 `-f infra/docker/docker-compose.test.yml` — the override doesn't persist
 on its own) then `docker compose up --build -d` as usual.
 
+## CI/CD (Phase 12)
+
+Design and trade-offs: [ADR-0019](../decisions/ADR-0019-cicd-build-once-promote-the-artifact.md).
+Three workflows in `.github/workflows/`:
+
+| Workflow | Runs | Does |
+|---|---|---|
+| `ci.yml` | every PR, every push to `main` | lint + format check, unit tests (Python 3.12 and 3.13, plus Payment's own run), bandit / pip-audit / gitleaks, build + Trivy-scan all nine images, full-stack integration suite. On `main`, once all pass: publish images to GHCR as `sha-<commit>`, then run the integration suite against those published images ("staging") |
+| `promote.yml` | pushing a `v*` tag | re-tags that commit's already-built images as the release and `production` — no rebuild; refuses if the commit never passed CI |
+| `chaos.yml` | nightly + on demand | the MTTR chaos tests, uploading the report |
+
+**Run the same gates locally** before pushing (tool versions pinned in
+`infra/ci/requirements-tools.txt`):
+
+```bash
+pip install -r requirements-dev.txt -r infra/ci/requirements-tools.txt
+ruff check . && ruff format --check .        # `ruff format .` to fix style
+python -m pytest && (cd services/payment && python -m pytest)
+bandit -r agents services shared infra -x "*/tests/*" -q
+python infra/ci/audit_dependencies.py         # needs network (PyPI advisories)
+```
+
+**One-time repository setup** — the workflows can't do these for you:
+
+1. *Settings > Environments*: create `staging` (no rules needed) and
+   `production` with **Required reviewers** enabled. That approval is the
+   only thing stopping a version tag from promoting unattended.
+2. *Settings > Branches*: protect `main` and require the `CI` checks
+   (Lint and format, Unit tests, Security scans, the image builds,
+   Integration tests) before merging.
+3. *Settings > Actions > General*: workflow permissions can stay at the
+   default read-only; each job that needs `packages: write` asks for it.
+
+**Cut a release:** merge to `main`, wait for its CI run (including
+*Staging verification*) to go green, then
+`git tag v1.0.0 && git push origin v1.0.0` and approve the `production`
+deployment when prompted. The promoted images are
+`ghcr.io/<owner>/flowguard-<service>:production` and `:v1.0.0`. Rolling them
+out to a host is Phase 13 — the *Deploy* job only says so.
+
+**Reproduce staging locally** with images you have (or pull from GHCR):
+
+```bash
+IMAGE_REGISTRY=ghcr.io/<owner> IMAGE_TAG=sha-<commit> \
+docker compose -f docker-compose.yml -f infra/docker/docker-compose.images.yml \
+  up -d --no-build --wait
+```
+
+**Not yet confirmed on GitHub:** these workflows pass `actionlint` and
+GitHub's published schemas and every command in them was run locally, but
+they had not run on GitHub's runners when this was written. Watch the first
+run in the *Actions* tab; failures there should be about permissions, the
+registry or caching rather than about the code.
+
 ## Viewing Traces in Jaeger
 
 Every service exports spans to Jaeger as of Phase 4. Make the payment
