@@ -1,0 +1,32 @@
+# Override that runs the stack from published container images instead of
+# building from source — used by the release workflow's staging job to
+# verify the exact artifacts that will later be promoted to production
+# (build once, verify that artifact, promote that artifact; never rebuild
+# between environments). See docs/decisions/ADR-0019.
+#
+#   IMAGE_REGISTRY=ghcr.io/<owner> IMAGE_TAG=sha-<commit> \
+#   docker compose -f docker-compose.yml -f infra/docker/docker-compose.images.yml \
+#     up -d --no-build
+#
+# Both variables are required (compose fails fast if unset) so a run can
+# never silently fall back to a locally built or `latest` image.
+
+services:
+  gateway:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-gateway:${IMAGE_TAG:?set IMAGE_TAG}
+  payment:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-payment:${IMAGE_TAG:?set IMAGE_TAG}
+  fraud:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-fraud:${IMAGE_TAG:?set IMAGE_TAG}
+  user:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-user:${IMAGE_TAG:?set IMAGE_TAG}
+  notification:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-notification:${IMAGE_TAG:?set IMAGE_TAG}
+  monitor:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-monitor:${IMAGE_TAG:?set IMAGE_TAG}
+  healer:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-healer:${IMAGE_TAG:?set IMAGE_TAG}
+  ops-controller:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-ops-controller:${IMAGE_TAG:?set IMAGE_TAG}
+  fraud-agent:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/flowguard-fraud-agent:${IMAGE_TAG:?set IMAGE_TAG}
