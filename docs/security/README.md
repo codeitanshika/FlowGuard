@@ -131,7 +131,30 @@ authenticate its caller.)
 Also: `OPS_HEALER_TOKEN` is a single static shared secret with no rotation
 mechanism; calls to routes that do not exist are not audited.
 
-## Planned (Phase 12)
+## Automated Security Checks (Phase 12)
 
-- Automated security checks in the CI pipeline (dependency scanning, secret
-  scanning) — documented here once the workflow file exists.
+Every pull request and push to main runs (`.github/workflows/ci.yml`; see
+[ADR-0019](../decisions/ADR-0019-cicd-build-once-promote-the-artifact.md)):
+
+- **Secret scanning** — gitleaks over the *full git history*, not just the
+  tip (a secret committed and later deleted is still leaked). The binary
+  is downloaded at a pinned version and its SHA-256 verified.
+- **Dependency vulnerabilities** — `pip-audit --strict` over the union of
+  every service's and agent's own `pyproject.toml` (the set the images
+  actually install). Dependabot opens the routine update PRs.
+- **Static analysis** — bandit over application code. Its one finding
+  (`random.random()` for fault-injection sampling) is annotated with the
+  reason rather than the rule being disabled.
+- **Container scanning** — Trivy on all nine images; fixable HIGH/CRITICAL
+  vulnerabilities fail the build. Unfixed ones are ignored deliberately
+  (nothing to act on until upstream ships a fix).
+
+Publishing to the registry is gated on all of the above plus the
+integration suite, and production promotion additionally needs a manual
+approval (the `production` GitHub Environment's required reviewers — a
+repository setting, not something the workflow file can enforce).
+
+Known gaps: dependencies are unpinned (`>=` ranges, no lockfiles), so
+builds are not reproducible and audits reflect what resolves *today*;
+workflow actions are pinned by major-version tag rather than commit SHA.
+Both are recorded in ADR-0019.

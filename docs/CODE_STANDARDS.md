@@ -82,7 +82,14 @@ control-plane tables — never a direct write to a business service's schema.
   or event message — never pass raw dicts across a boundary.
 - No bare `except:` — catch specific exceptions and handle them explicitly.
 - One module = one responsibility (`api/` vs `services/` vs `db/`).
-- Formatting/linting is `ruff` + `black`; no manual style debates.
+- Formatting and linting are `ruff` alone (`ruff check`, `ruff format`; one
+  `ruff.toml`) — enforced in CI, so no manual style debates. See
+  [ADR-0019](decisions/ADR-0019-cicd-build-once-promote-the-artifact.md).
+  Suppress a rule only with a written reason (`# nosec B311` says why; the
+  ignores in `ruff.toml` say why).
+- Tests that use random ids must not depend on any *probabilistic* signal
+  staying quiet (the simulated geo check fires for ~1 in 10 UUIDs): pin it,
+  or the test flakes and CI becomes noise.
 
 ## API Design Rules
 

@@ -136,8 +136,11 @@ log.info("payment.completed", transaction_id=tx.id, amount=tx.amount, provider=t
 
 ## ruff
 
-**What it is:** A fast Python linter (paired with `black` for formatting).
-One `ruff.toml` at the repo root applies to every service and agent.
+**What it is:** A fast Python linter *and* formatter — it replaces `black`
+too (ADR-0019). One `ruff.toml` at the repo root applies to every service
+and agent; CI runs `ruff check .` and `ruff format --check .` with the
+version pinned in `infra/ci/requirements-tools.txt`. `docs/` is excluded
+(ruff would reformat Python blocks inside markdown).
 
 ## pytest
 
