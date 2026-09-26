@@ -1,0 +1,54 @@
+name: Chaos tests
+
+# Slow (a few minutes) and timing-based by design, so not part of every PR:
+# runs nightly on the default branch and on demand. Failure scenarios #1 and
+# #2 against the live stack, asserting NFR11 (MTTR < 120s) — see
+# docs/decisions/ADR-0018-chaos-testing-measures-real-mttr.md.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chaos:
+    name: Chaos tests (MTTR vs NFR11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Configure the stack
+        run: cp .env.example .env
+      - name: Start the stack with Postgres/Redis published (test override)
+        run: |
+          docker compose -f docker-compose.yml -f infra/docker/docker-compose.test.yml \
+            up --build -d --wait --wait-timeout 300
+      - name: Chaos tests
+        run: python -m pytest tests/chaos -v
+      - name: MTTR report
+        if: always()
+        run: python -m tests.chaos.report --runs 2 | tee mttr-report.txt
+      - name: Collect service logs
+        if: failure()
+        run: docker compose logs --no-color > compose-logs.txt
+      - name: Upload report and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results
+          path: |
+            mttr-report.txt
+            compose-logs.txt
+          if-no-files-found: ignore
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f infra/docker/docker-compose.test.yml down -v
