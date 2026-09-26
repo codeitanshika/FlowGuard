@@ -32,10 +32,6 @@ async def create_notification(
 
 
 async def list_by_user(db: AsyncSession, user_id: uuid.UUID) -> list[Notification]:
-    stmt = (
-        select(Notification)
-        .where(Notification.user_id == user_id)
-        .order_by(Notification.created_at.desc())
-    )
+    stmt = select(Notification).where(Notification.user_id == user_id).order_by(Notification.created_at.desc())
     result = await db.execute(stmt)
     return list(result.scalars().all())

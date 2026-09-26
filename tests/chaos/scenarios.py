@@ -109,7 +109,11 @@ def _to_result(name: str, fault_injected_at: datetime, anomaly, incident) -> Cha
     detect_seconds = (anomaly.detected_at - fault_injected_at).total_seconds()
     if incident is None or incident.resolved_at is None:
         return ChaosResult(
-            name, False, detect_seconds, None, None,
+            name,
+            False,
+            detect_seconds,
+            None,
+            None,
             f"anomaly {anomaly.id} detected after {detect_seconds:.1f}s but no incident resolved within the timeout",
         )
 
@@ -117,7 +121,11 @@ def _to_result(name: str, fault_injected_at: datetime, anomaly, incident) -> Cha
     outcome = incident.status.value
     recovered = outcome == "resolved"
     return ChaosResult(
-        name, recovered, detect_seconds, resolve_seconds, outcome,
+        name,
+        recovered,
+        detect_seconds,
+        resolve_seconds,
+        outcome,
         f"anomaly {anomaly.id} -> incident {incident.id} ({outcome}) in {resolve_seconds:.1f}s "
         f"(detected after {detect_seconds:.1f}s)",
     )

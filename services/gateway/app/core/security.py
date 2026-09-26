@@ -11,9 +11,7 @@ class TokenError(Exception):
     pass
 
 
-def create_access_token(
-    subject: str, scopes: list[str], secret: str, expires_in: int
-) -> tuple[str, int]:
+def create_access_token(subject: str, scopes: list[str], secret: str, expires_in: int) -> tuple[str, int]:
     now = int(time.time())
     payload = {
         "sub": subject,

@@ -63,7 +63,9 @@ def _render_table(results: list[ChaosResult]) -> str:
         counts[r.scenario] = counts.get(r.scenario, 0) + 1
         detect = f"{r.detect_seconds:.1f}" if r.detect_seconds is not None else "-"
         resolve = f"{r.resolve_seconds:.1f}" if r.resolve_seconds is not None else "-"
-        lines.append(f"{r.scenario:<22} {counts[r.scenario]:>4} {detect:>12} {resolve:>12} {r.outcome or 'timeout':<12}")
+        lines.append(
+            f"{r.scenario:<22} {counts[r.scenario]:>4} {detect:>12} {resolve:>12} {r.outcome or 'timeout':<12}"
+        )
     return "\n".join(lines)
 
 

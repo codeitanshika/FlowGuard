@@ -124,13 +124,18 @@ def get_user(token: str, user_id: str) -> dict[str, Any]:
     return response.json()["data"]
 
 
-def enable_fault(token: str, target: str, mode: str, error_rate: float = 1.0, latency_ms: int = 0, duration_seconds: int = 30) -> None:
+def enable_fault(
+    token: str, target: str, mode: str, error_rate: float = 1.0, latency_ms: int = 0, duration_seconds: int = 30
+) -> None:
     response = httpx.post(
         f"{GATEWAY_URL}/api/v1/debug/fault-inject",
         headers=auth_headers(token),
         json={
-            "target": target, "mode": mode, "error_rate": error_rate,
-            "latency_ms": latency_ms, "duration_seconds": duration_seconds,
+            "target": target,
+            "mode": mode,
+            "error_rate": error_rate,
+            "latency_ms": latency_ms,
+            "duration_seconds": duration_seconds,
         },
         timeout=10.0,
     )

@@ -69,21 +69,15 @@ class MonitorAgent:
             truncated=truncated,
         )
         if truncated:
-            logger.warning(
-                "monitor.telemetry_truncated", service=service, max_traces=self._settings.max_traces
-            )
+            logger.warning("monitor.telemetry_truncated", service=service, max_traces=self._settings.max_traces)
 
-        thresholds = resolve_thresholds(
-            service, self._settings.default_thresholds, self._settings.service_thresholds
-        )
+        thresholds = resolve_thresholds(service, self._settings.default_thresholds, self._settings.service_thresholds)
         for breach in evaluate(snapshot, thresholds):
             await self._raise_anomaly(breach)
 
     async def _raise_anomaly(self, breach: Breach) -> None:
         if not await self._deduper.try_claim(breach.service, breach.metric, breach.severity):
-            logger.info(
-                "monitor.anomaly_suppressed", service=breach.service, metric=breach.metric
-            )
+            logger.info("monitor.anomaly_suppressed", service=breach.service, metric=breach.metric)
             return
 
         try:

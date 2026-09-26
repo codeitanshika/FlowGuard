@@ -20,9 +20,7 @@ class Thresholds(BaseModel):
     min_throughput_rps: float | None = Field(default=None, ge=0)
 
 
-def resolve_thresholds(
-    service: str, defaults: Thresholds, overrides: dict[str, dict[str, float]]
-) -> Thresholds:
+def resolve_thresholds(service: str, defaults: Thresholds, overrides: dict[str, dict[str, float]]) -> Thresholds:
     override = overrides.get(service)
     if not override:
         return defaults

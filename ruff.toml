@@ -5,7 +5,7 @@
 target-version = "py312"
 line-length = 120
 
-extend-exclude = [".venv", "dashboard"]
+extend-exclude = [".venv", "dashboard", "docs"]
 
 [lint]
 select = [

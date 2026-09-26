@@ -71,9 +71,7 @@ class PaymentOrchestrator:
         self._user_breaker = user_breaker
         self._provider_breaker = provider_breaker
 
-    async def create_payment(
-        self, db: AsyncSession, payload: PaymentRequest, idempotency_key: str
-    ) -> PaymentResponse:
+    async def create_payment(self, db: AsyncSession, payload: PaymentRequest, idempotency_key: str) -> PaymentResponse:
         request_hash = _hash_request(payload)
 
         existing = await repository.get_idempotency_key(db, idempotency_key)
@@ -81,9 +79,7 @@ class PaymentOrchestrator:
             return _replay(existing, request_hash, idempotency_key)
 
         if not await self._idempotency_lock.acquire(idempotency_key):
-            raise ConflictError(
-                "a request with this idempotency key is already being processed, retry shortly"
-            )
+            raise ConflictError("a request with this idempotency key is already being processed, retry shortly")
 
         try:
             # Double-checked: another request may have finished and released
@@ -224,9 +220,7 @@ class PaymentOrchestrator:
 
     async def _publish_outcome(self, transaction: Transaction) -> None:
         channel = (
-            Channels.PAYMENT_COMPLETED
-            if transaction.status == TransactionStatus.completed
-            else Channels.PAYMENT_FAILED
+            Channels.PAYMENT_COMPLETED if transaction.status == TransactionStatus.completed else Channels.PAYMENT_FAILED
         )
         await self._event_bus.publish(
             channel,

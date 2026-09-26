@@ -10,8 +10,7 @@ def decide(velocity_count: int, geo_anomaly: bool, thresholds: VelocityThreshold
     reasons = []
     if velocity_count >= thresholds.high:
         reasons.append(
-            f"{velocity_count} transactions in the last {thresholds.window_seconds}s "
-            f"(threshold {thresholds.high})"
+            f"{velocity_count} transactions in the last {thresholds.window_seconds}s (threshold {thresholds.high})"
         )
     elif velocity_count >= thresholds.borderline:
         reasons.append(

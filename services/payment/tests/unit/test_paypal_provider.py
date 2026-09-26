@@ -43,6 +43,7 @@ class AlwaysFaults:
 
 # --- PayPalAuth ----------------------------------------------------------
 
+
 async def test_auth_fetches_and_caches_the_token():
     calls = []
 
@@ -88,28 +89,43 @@ async def test_auth_network_error_is_a_dependency_error():
 
 # --- error classification -------------------------------------------------
 
+
 def paypal_error(issue, description="declined", status=422):
     return httpx.Response(
         status,
-        json={"name": "UNPROCESSABLE_ENTITY", "message": "x", "details": [{"issue": issue, "description": description}]},
+        json={
+            "name": "UNPROCESSABLE_ENTITY",
+            "message": "x",
+            "details": [{"issue": issue, "description": description}],
+        },
     )
 
 
-@pytest.mark.parametrize("issue", [
-    "ORDER_NOT_APPROVED", "INSTRUMENT_DECLINED", "PAYER_ACTION_REQUIRED",
-    "TRANSACTION_REFUSED", "DUPLICATE_INVOICE_ID", "AMOUNT_MISMATCH",
-])
+@pytest.mark.parametrize(
+    "issue",
+    [
+        "ORDER_NOT_APPROVED",
+        "INSTRUMENT_DECLINED",
+        "PAYER_ACTION_REQUIRED",
+        "TRANSACTION_REFUSED",
+        "DUPLICATE_INVOICE_ID",
+        "AMOUNT_MISMATCH",
+    ],
+)
 def test_known_decline_issues_classify_as_a_decline(issue):
     decline = classify(paypal_error(issue))
     assert isinstance(decline, PayPalDecline) and decline.issue == issue
 
 
-@pytest.mark.parametrize("response", [
-    paypal_error("SOME_UNKNOWN_FUTURE_ISSUE"),
-    httpx.Response(500, text="internal server error"),
-    httpx.Response(429, json={"name": "RATE_LIMIT_REACHED"}),
-    httpx.Response(401, text="not json"),
-])
+@pytest.mark.parametrize(
+    "response",
+    [
+        paypal_error("SOME_UNKNOWN_FUTURE_ISSUE"),
+        httpx.Response(500, text="internal server error"),
+        httpx.Response(429, json={"name": "RATE_LIMIT_REACHED"}),
+        httpx.Response(401, text="not json"),
+    ],
+)
 def test_unrecognized_or_infra_errors_are_not_declines(response):
     assert classify(response) is None
 
@@ -121,6 +137,7 @@ def test_parse_error_falls_back_gracefully_on_unparseable_body():
 
 # --- PayPalProvider.capture -----------------------------------------------
 
+
 def order_created(order_id="order-1"):
     return httpx.Response(201, json={"id": order_id, "status": "CREATED"})
 
@@ -128,8 +145,11 @@ def order_created(order_id="order-1"):
 def order_captured(capture_id="capture-1"):
     return httpx.Response(
         201,
-        json={"id": "order-1", "status": "COMPLETED",
-              "purchase_units": [{"payments": {"captures": [{"id": capture_id, "status": "COMPLETED"}]}}]},
+        json={
+            "id": "order-1",
+            "status": "COMPLETED",
+            "purchase_units": [{"payments": {"captures": [{"id": capture_id, "status": "COMPLETED"}]}}],
+        },
     )
 
 
@@ -223,6 +243,7 @@ async def test_injected_fault_is_checked_before_any_real_http_call():
 
 # --- status lookup ---------------------------------------------------------
 
+
 async def test_get_capture_status_returns_the_paypal_response():
     def handler(request):
         if request.url.path == "/v1/oauth2/token":
@@ -275,8 +296,13 @@ async def test_webhook_verification_success():
 
 
 async def test_webhook_verification_failure_is_rejected():
-    verifier = make_verifier(lambda r: token_response() if r.url.path == "/v1/oauth2/token"
-                              else httpx.Response(200, json={"verification_status": "FAILURE"}))
+    verifier = make_verifier(
+        lambda r: (
+            token_response()
+            if r.url.path == "/v1/oauth2/token"
+            else httpx.Response(200, json={"verification_status": "FAILURE"})
+        )
+    )
     with pytest.raises(WebhookVerificationError):
         await verifier.verify(GOOD_HEADERS, {"event_type": "x"})
 
@@ -291,7 +317,8 @@ async def test_webhook_missing_headers_is_rejected_without_calling_paypal():
 
 
 async def test_webhook_paypal_api_outage_is_a_dependency_error_not_a_rejection():
-    verifier = make_verifier(lambda r: token_response() if r.url.path == "/v1/oauth2/token"
-                              else httpx.Response(500, text="down"))
+    verifier = make_verifier(
+        lambda r: token_response() if r.url.path == "/v1/oauth2/token" else httpx.Response(500, text="down")
+    )
     with pytest.raises(DependencyUnavailableError):
         await verifier.verify(GOOD_HEADERS, {"event_type": "x"})

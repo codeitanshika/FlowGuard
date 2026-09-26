@@ -7,9 +7,7 @@ from shared.config import BaseServiceSettings
 
 
 class Settings(BaseServiceSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env", extra="ignore", env_prefix="NOTIFICATION_"
-    )
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="NOTIFICATION_")
 
     service_name: str = "notification"
     port: int = 8004

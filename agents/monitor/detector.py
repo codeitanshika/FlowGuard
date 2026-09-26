@@ -84,13 +84,13 @@ def evaluate(snapshot: MetricsSnapshot, thresholds: Thresholds) -> list[Breach]:
     breaches: list[Breach] = []
 
     if snapshot.request_count >= thresholds.min_requests:
-        error_breach = _graded(
-            snapshot.error_rate, thresholds.error_rate_warning, thresholds.error_rate_critical
-        )
+        error_breach = _graded(snapshot.error_rate, thresholds.error_rate_warning, thresholds.error_rate_critical)
         if error_breach:
             severity, threshold = error_breach
             breaches.append(
-                Breach(snapshot.service, "error_rate", snapshot.error_rate, threshold, severity, snapshot.error_trace_id)
+                Breach(
+                    snapshot.service, "error_rate", snapshot.error_rate, threshold, severity, snapshot.error_trace_id
+                )
             )
 
         latency_breach = _graded(snapshot.p95_ms, thresholds.p95_warning_ms, thresholds.p95_critical_ms)
@@ -106,7 +106,9 @@ def evaluate(snapshot: MetricsSnapshot, thresholds: Thresholds) -> list[Breach]:
         and snapshot.throughput_rps < thresholds.min_throughput_rps
     ):
         breaches.append(
-            Breach(snapshot.service, "throughput", snapshot.throughput_rps, thresholds.min_throughput_rps, "warning", None)
+            Breach(
+                snapshot.service, "throughput", snapshot.throughput_rps, thresholds.min_throughput_rps, "warning", None
+            )
         )
 
     return breaches

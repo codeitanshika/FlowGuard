@@ -18,20 +18,30 @@ from tests.live_helpers import (
 def test_injected_error_actually_breaks_the_target_then_recovers(merchant_token):
     enable_fault(merchant_token, "fraud", "error_500", error_rate=1.0, duration_seconds=30)
     try:
-        broken = httpx.post(f"{FRAUD_URL}/internal/risk-check", json={
-            "transaction_id": "00000000-0000-0000-0000-000000000000",
-            "user_id": "00000000-0000-0000-0000-000000000000",
-            "amount": "1.00", "currency": "USD",
-        }, timeout=10.0)
+        broken = httpx.post(
+            f"{FRAUD_URL}/internal/risk-check",
+            json={
+                "transaction_id": "00000000-0000-0000-0000-000000000000",
+                "user_id": "00000000-0000-0000-0000-000000000000",
+                "amount": "1.00",
+                "currency": "USD",
+            },
+            timeout=10.0,
+        )
         assert broken.status_code == 500
     finally:
         clear_fault(merchant_token, "fraud")
 
-    recovered = httpx.post(f"{FRAUD_URL}/internal/risk-check", json={
-        "transaction_id": "00000000-0000-0000-0000-000000000001",
-        "user_id": "00000000-0000-0000-0000-000000000001",
-        "amount": "1.00", "currency": "USD",
-    }, timeout=10.0)
+    recovered = httpx.post(
+        f"{FRAUD_URL}/internal/risk-check",
+        json={
+            "transaction_id": "00000000-0000-0000-0000-000000000001",
+            "user_id": "00000000-0000-0000-0000-000000000001",
+            "amount": "1.00",
+            "currency": "USD",
+        },
+        timeout=10.0,
+    )
     assert recovered.status_code == 200
 
 

@@ -12,12 +12,8 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 
 
 @router.post("/risk-check", response_model=Envelope[RiskAssessmentResponse])
-async def risk_check(
-    payload: RiskCheckRequest, db: AsyncSession = Depends(get_db)
-) -> Envelope[RiskAssessmentResponse]:
-    assessment = await fraud_service.run_risk_check(
-        db, payload.transaction_id, payload.user_id, payload.amount
-    )
+async def risk_check(payload: RiskCheckRequest, db: AsyncSession = Depends(get_db)) -> Envelope[RiskAssessmentResponse]:
+    assessment = await fraud_service.run_risk_check(db, payload.transaction_id, payload.user_id, payload.amount)
     return Envelope(data=RiskAssessmentResponse.model_validate(assessment))
 
 

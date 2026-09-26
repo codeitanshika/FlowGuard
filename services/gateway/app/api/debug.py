@@ -90,29 +90,21 @@ async def _forward_enable(payload: DebugFaultInjectRequest, settings: Settings) 
     # ADR-0012's retry-budget-headroom concerns.
     async with httpx.AsyncClient(timeout=5.0) as http_client:
         try:
-            response = await http_client.post(
-                f"{base_url}/internal/fault-injection", json=body.model_dump()
-            )
+            response = await http_client.post(f"{base_url}/internal/fault-injection", json=body.model_dump())
         except httpx.HTTPError as exc:
             raise DependencyUnavailableError(
                 f"could not reach '{payload.target}' to configure fault injection: {exc}"
             ) from exc
     if response.status_code >= 400:
-        raise DependencyUnavailableError(
-            f"'{payload.target}' rejected fault-injection request: {response.text}"
-        )
+        raise DependencyUnavailableError(f"'{payload.target}' rejected fault-injection request: {response.text}")
 
 
 async def _forward_disable(target: str, settings: Settings) -> None:
     base_url, component = _resolve_forward(target, settings)
     async with httpx.AsyncClient(timeout=5.0) as http_client:
         try:
-            response = await http_client.delete(
-                f"{base_url}/internal/fault-injection", params={"component": component}
-            )
+            response = await http_client.delete(f"{base_url}/internal/fault-injection", params={"component": component})
         except httpx.HTTPError as exc:
-            raise DependencyUnavailableError(
-                f"could not reach '{target}' to clear fault injection: {exc}"
-            ) from exc
+            raise DependencyUnavailableError(f"could not reach '{target}' to clear fault injection: {exc}") from exc
     if response.status_code >= 400:
         raise DependencyUnavailableError(f"'{target}' rejected fault-injection clear: {response.text}")

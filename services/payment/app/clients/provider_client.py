@@ -58,6 +58,4 @@ class MockPaymentProvider:
 
         if amount == self._DECLINE_AMOUNT:
             return ProviderResult(success=False, provider_reference=None, failure_reason="simulated provider decline")
-        return ProviderResult(
-            success=True, provider_reference=f"mock_{transaction_id.hex[:12]}", failure_reason=None
-        )
+        return ProviderResult(success=True, provider_reference=f"mock_{transaction_id.hex[:12]}", failure_reason=None)

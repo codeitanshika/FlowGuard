@@ -49,7 +49,9 @@ async def run_consumer(bus: RedisEventBus) -> None:
 
     await consume_forever(
         bus,
-        Channels.PAYMENT_COMPLETED, Channels.PAYMENT_FAILED, Channels.FRAUD_USER_FROZEN,
+        Channels.PAYMENT_COMPLETED,
+        Channels.PAYMENT_FAILED,
+        Channels.FRAUD_USER_FROZEN,
         on_message=_handle_message,
         service_name="notification",
     )

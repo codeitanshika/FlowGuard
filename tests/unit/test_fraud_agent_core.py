@@ -19,6 +19,7 @@ from agents.fraud.velocity import VelocityTracker
 
 # --- geo -------------------------------------------------------------
 
+
 def test_home_country_is_deterministic_and_stable_across_processes():
     user_id = uuid.uuid4()
     assert home_country(user_id) == home_country(user_id)
@@ -60,6 +61,7 @@ def test_geo_anomaly_never_fires_with_denominator_effectively_off():
 
 
 # --- velocity ----------------------------------------------------------
+
 
 class FakeRedis:
     """Sorted-set subset used by VelocityTracker, plus a minimal pipeline."""
@@ -157,6 +159,7 @@ async def test_velocity_does_not_double_count_the_same_transaction():
 
 # --- risk policy ---------------------------------------------------------
 
+
 def test_low_velocity_no_geo_is_low_risk():
     d = decide(1, False, VelocityThresholds())
     assert d.level == "low"
@@ -192,17 +195,24 @@ def test_reasons_are_never_empty():
 
 # --- narrator: LLM path over a mock transport -----------------------------
 
+
 def message_response(text: str, stop_reason="end_turn") -> dict:
     return {
-        "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5",
-        "content": [{"type": "text", "text": text}], "stop_reason": stop_reason,
-        "stop_sequence": None, "usage": {"input_tokens": 80, "output_tokens": 30},
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": [{"type": "text", "text": text}],
+        "stop_reason": stop_reason,
+        "stop_sequence": None,
+        "usage": {"input_tokens": 80, "output_tokens": 30},
     }
 
 
 def make_narrator(handler) -> Narrator:
     client = AsyncAnthropic(
-        api_key="test-key", max_retries=0,
+        api_key="test-key",
+        max_retries=0,
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
     )
     return Narrator(client, "claude-opus-5")
@@ -227,11 +237,14 @@ async def test_llm_narrative_is_used_and_never_asked_for_a_decision():
     assert set(properties) == {"rationale", "confidence"}
 
 
-@pytest.mark.parametrize("response", [
-    lambda r: httpx2.Response(500, json={"type": "error", "error": {"type": "api_error", "message": "boom"}}),
-    lambda r: httpx2.Response(200, json=message_response("", stop_reason="refusal")),
-    lambda r: httpx2.Response(200, json=message_response("not json at all")),
-])
+@pytest.mark.parametrize(
+    "response",
+    [
+        lambda r: httpx2.Response(500, json={"type": "error", "error": {"type": "api_error", "message": "boom"}}),
+        lambda r: httpx2.Response(200, json=message_response("", stop_reason="refusal")),
+        lambda r: httpx2.Response(200, json=message_response("not json at all")),
+    ],
+)
 async def test_any_llm_failure_falls_back_to_a_rules_based_narrative(response):
     result = await make_narrator(response).narrate(BORDERLINE)
     assert result.source == "rules" and result.fallback_reason

@@ -90,8 +90,14 @@ class FakeGatherer:
 
 def anomaly(service="payment", metric="error_rate") -> AnomalyEvent:
     return AnomalyEvent(
-        event="anomaly.detected", anomaly_id=uuid.uuid4(), service=service, metric=metric,
-        observed_value=1.0, threshold=0.2, severity="critical", trace_id="t1",
+        event="anomaly.detected",
+        anomaly_id=uuid.uuid4(),
+        service=service,
+        metric=metric,
+        observed_value=1.0,
+        threshold=0.2,
+        severity="critical",
+        trace_id="t1",
     )
 
 
@@ -120,9 +126,14 @@ def env(monkeypatch):
 
 def make_agent(env, gatherer, ops, max_concurrent=10) -> HealerAgent:
     settings = SimpleNamespace(
-        verify_interval_seconds=0.001, verify_window_seconds=30, verify_timeout_seconds=0.05,
-        max_concurrent_incidents=max_concurrent, default_thresholds=Thresholds(), service_thresholds={},
-        precheck_window_seconds=30, precheck_recent_samples=5,
+        verify_interval_seconds=0.001,
+        verify_window_seconds=30,
+        verify_timeout_seconds=0.05,
+        max_concurrent_incidents=max_concurrent,
+        default_thresholds=Thresholds(),
+        service_thresholds={},
+        precheck_window_seconds=30,
+        precheck_recent_samples=5,
     )
     return HealerAgent(settings, env.bus, gatherer, Diagnoser(None, "claude-opus-5"), ops, metrics=None)
 
@@ -186,7 +197,9 @@ async def test_ops_cooldown_with_breaker_not_in_target_state_fails_the_incident(
     assert env.db.final[0] == IncidentStatus.failed and "blocked by the Ops cooldown" in env.db.final[2]
 
 
-@pytest.mark.parametrize("error", [OpsError(403, "forbidden"), OpsError(0, "unreachable"), OpsError(503, "payment down")])
+@pytest.mark.parametrize(
+    "error", [OpsError(403, "forbidden"), OpsError(0, "unreachable"), OpsError(503, "payment down")]
+)
 async def test_ops_failure_fails_the_incident_without_verifying(env, error):
     env.checks.append("recovered")
     agent = make_agent(env, FakeGatherer([PROVIDER_FACT], {"provider": "closed"}), FakeOps(error))
@@ -252,10 +265,13 @@ async def test_overload_is_recorded_not_silently_dropped(env):
     assert env.db.final[0] == IncidentStatus.failed and "max concurrent" in env.db.final[2]
 
 
-@pytest.mark.parametrize("fresh,note", [
-    ("recovered", "stale anomaly"),
-    ("no_traffic", "no recent traffic"),
-])
+@pytest.mark.parametrize(
+    "fresh,note",
+    [
+        ("recovered", "stale anomaly"),
+        ("no_traffic", "no recent traffic"),
+    ],
+)
 async def test_stale_anomaly_is_not_acted_on(env, fresh, note):
     env.prechecks[0] = fresh
     ops = FakeOps()

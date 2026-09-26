@@ -93,7 +93,10 @@ def test_get_and_list_payments_reflect_what_was_created(merchant_token):
     assert fetched.status_code == 200 and fetched.json()["data"]["id"] == created["id"]
 
     listed = httpx.get(
-        f"{GATEWAY_URL}/api/v1/payments", params={"user_id": user_id}, headers=auth_headers(merchant_token), timeout=10.0
+        f"{GATEWAY_URL}/api/v1/payments",
+        params={"user_id": user_id},
+        headers=auth_headers(merchant_token),
+        timeout=10.0,
     )
     assert listed.status_code == 200
     assert any(p["id"] == created["id"] for p in listed.json()["data"])

@@ -142,9 +142,7 @@ class CircuitBreaker:
         # SET NX is the same atomic-claim primitive shared/idempotency.py
         # uses for the same reason: avoid a thundering herd of "is it
         # back yet?" attempts the moment the timeout lapses.
-        acquired = await self._redis.set(
-            self._key("probe"), "1", nx=True, ex=int(self._config.recovery_timeout) or 1
-        )
+        acquired = await self._redis.set(self._key("probe"), "1", nx=True, ex=int(self._config.recovery_timeout) or 1)
         if not acquired:
             raise BreakerOpenError(f"circuit '{self._name}' is open (probe already in flight)")
 

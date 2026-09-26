@@ -106,9 +106,7 @@ class FraudAgent:
             )
             return
 
-        await db.record_decision(
-            input_summary, {"level": "high", "reason": reason, "outcome": "frozen"}, executed=True
-        )
+        await db.record_decision(input_summary, {"level": "high", "reason": reason, "outcome": "frozen"}, executed=True)
         logger.warning("fraud_agent.user_frozen", user_id=str(event.user_id), reason=reason)
         await self._publish_frozen(event, reason)
 

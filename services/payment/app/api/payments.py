@@ -31,9 +31,7 @@ async def create_payment(
 
 
 @router.get("/payments/{transaction_id}", response_model=Envelope[PaymentResponse])
-async def get_payment(
-    transaction_id: uuid.UUID, db: AsyncSession = Depends(get_db)
-) -> Envelope[PaymentResponse]:
+async def get_payment(transaction_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Envelope[PaymentResponse]:
     txn = await repository.get_transaction(db, transaction_id)
     if txn is None:
         raise NotFoundError(f"transaction {transaction_id} not found")

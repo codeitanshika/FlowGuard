@@ -32,16 +32,12 @@ class Settings(BaseServiceSettings):
     paypal_client_id: str | None = Field(default=None, validation_alias="PAYPAL_CLIENT_ID")
     paypal_client_secret: str | None = Field(default=None, validation_alias="PAYPAL_CLIENT_SECRET")
     paypal_webhook_id: str | None = Field(default=None, validation_alias="PAYPAL_WEBHOOK_ID")
-    paypal_api_base_url: str = Field(
-        default="https://api-m.sandbox.paypal.com", validation_alias="PAYPAL_API_BASE_URL"
-    )
+    paypal_api_base_url: str = Field(default="https://api-m.sandbox.paypal.com", validation_alias="PAYPAL_API_BASE_URL")
 
     @model_validator(mode="after")
     def _paypal_credentials_required_when_active(self) -> "Settings":
         if self.provider_backend == "paypal" and not (self.paypal_client_id and self.paypal_client_secret):
-            raise ValueError(
-                "PAYMENT_PROVIDER_BACKEND=paypal requires PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET"
-            )
+            raise ValueError("PAYMENT_PROVIDER_BACKEND=paypal requires PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET")
         return self
 
 

@@ -46,9 +46,7 @@ async def freeze(
     risk_assessment_id: uuid.UUID | None,
 ) -> User:
     user = await get_user(db, user_id)
-    return await repository.set_status(
-        db, user, UserStatus.frozen, "freeze", reason, source, risk_assessment_id
-    )
+    return await repository.set_status(db, user, UserStatus.frozen, "freeze", reason, source, risk_assessment_id)
 
 
 async def unfreeze(db: AsyncSession, user_id: uuid.UUID, reason: str, source: str) -> User:

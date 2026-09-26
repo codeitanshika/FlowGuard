@@ -49,9 +49,7 @@ class HealerAgent:
     # --- intake -----------------------------------------------------------
 
     async def run_forever(self) -> None:
-        await consume_forever(
-            self._bus, Channels.ANOMALY_DETECTED, on_message=self._on_message, service_name="healer"
-        )
+        await consume_forever(self._bus, Channels.ANOMALY_DETECTED, on_message=self._on_message, service_name="healer")
 
     async def _on_message(self, message: dict) -> None:
         try:
@@ -85,7 +83,10 @@ class HealerAgent:
         incident = await db.create_incident(anomaly.anomaly_id)
         logger.error("healer.overloaded", anomaly_id=str(anomaly.anomaly_id))
         await self._close(
-            incident.id, anomaly.anomaly_id, "failed", None,
+            incident.id,
+            anomaly.anomaly_id,
+            "failed",
+            None,
             "not handled: Healer at max concurrent incidents",
         )
 
@@ -96,22 +97,25 @@ class HealerAgent:
         incident_id = incident.id
         logger.info(
             "healer.incident_opened",
-            incident_id=str(incident_id), anomaly_id=str(anomaly.anomaly_id),
-            service=anomaly.service, metric=anomaly.metric, severity=anomaly.severity,
+            incident_id=str(incident_id),
+            anomaly_id=str(anomaly.anomaly_id),
+            service=anomaly.service,
+            metric=anomaly.metric,
+            severity=anomaly.severity,
         )
         await self._publish(
             Channels.INCIDENT_DIAGNOSING,
-            incident_id=str(incident_id), anomaly_id=str(anomaly.anomaly_id),
-            service=anomaly.service, metric=anomaly.metric,
+            incident_id=str(incident_id),
+            anomaly_id=str(anomaly.anomaly_id),
+            service=anomaly.service,
+            metric=anomaly.metric,
         )
 
         root_cause: str | None = None
         try:
             facts = await self._gatherer.trace_facts(anomaly.trace_id)
             circuits = await self._gatherer.circuits()
-            diagnosis = await self._diagnoser.diagnose(
-                anomaly, facts, circuits, await self._allowed_actions()
-            )
+            diagnosis = await self._diagnoser.diagnose(anomaly, facts, circuits, await self._allowed_actions())
             decision = diagnosis.decision
             root_cause = decision.root_cause
             chosen = plan(decision, circuits)
@@ -120,8 +124,10 @@ class HealerAgent:
                 incident_id,
                 input_summary={
                     "anomaly": {
-                        "service": anomaly.service, "metric": anomaly.metric,
-                        "observed_value": anomaly.observed_value, "threshold": anomaly.threshold,
+                        "service": anomaly.service,
+                        "metric": anomaly.metric,
+                        "observed_value": anomaly.observed_value,
+                        "threshold": anomaly.threshold,
                         "severity": anomaly.severity,
                     },
                     "evidence_spans": len(facts),
@@ -143,8 +149,11 @@ class HealerAgent:
             )
             logger.info(
                 "healer.decision",
-                incident_id=str(incident_id), source=diagnosis.source,
-                proposed=decision.action, plan=chosen.kind, reason=chosen.reason,
+                incident_id=str(incident_id),
+                source=diagnosis.source,
+                proposed=decision.action,
+                plan=chosen.kind,
+                reason=chosen.reason,
             )
 
             if chosen.kind == "escalate":
@@ -158,7 +167,10 @@ class HealerAgent:
                 stale = await self._stale_reason(anomaly)
                 if stale:
                     await self._close(
-                        incident_id, anomaly.anomaly_id, "resolved", root_cause,
+                        incident_id,
+                        anomaly.anomaly_id,
+                        "resolved",
+                        root_cause,
                         f"no action taken: {stale}",
                     )
                     return
@@ -169,7 +181,10 @@ class HealerAgent:
                 except OpsError as exc:
                     if exc.status != 429:
                         await self._close(
-                            incident_id, anomaly.anomaly_id, "failed", root_cause,
+                            incident_id,
+                            anomaly.anomaly_id,
+                            "failed",
+                            root_cause,
                             f"{action_taken} not applied: {exc}",
                         )
                         return
@@ -180,7 +195,10 @@ class HealerAgent:
                     current = ((await self._gatherer.circuits()) or {}).get(chosen.dependency)
                     if current != wanted:
                         await self._close(
-                            incident_id, anomaly.anomaly_id, "failed", root_cause,
+                            incident_id,
+                            anomaly.anomaly_id,
+                            "failed",
+                            root_cause,
                             f"{action_taken} blocked by the Ops cooldown and the breaker is "
                             f"'{current}', not '{wanted}'; a later anomaly will retry",
                         )
@@ -189,8 +207,10 @@ class HealerAgent:
                 else:
                     await db.mark_decision_executed(decision_id)
                     logger.warning(
-                        "healer.action_executed", incident_id=str(incident_id),
-                        action=action_taken, ops_action_id=result.get("action_id"),
+                        "healer.action_executed",
+                        incident_id=str(incident_id),
+                        action=action_taken,
+                        ops_action_id=result.get("action_id"),
                     )
             else:
                 action_taken += f" ({chosen.reason})"
@@ -198,8 +218,11 @@ class HealerAgent:
             await db.update_incident(incident_id, IncidentStatus.remediating, root_cause, action_taken)
             recovered, note = await self._verify(anomaly, chosen)
             await self._close(
-                incident_id, anomaly.anomaly_id, "resolved" if recovered else "failed",
-                root_cause, f"{action_taken}; {note}",
+                incident_id,
+                anomaly.anomaly_id,
+                "resolved" if recovered else "failed",
+                root_cause,
+                f"{action_taken}; {note}",
             )
         except asyncio.CancelledError:
             raise
@@ -215,8 +238,12 @@ class HealerAgent:
         thresholds = resolve_thresholds(anomaly.service, settings.default_thresholds, settings.service_thresholds)
         try:
             fresh = await check_still_failing(
-                self._metrics, anomaly.service, anomaly.metric, thresholds,
-                settings.precheck_window_seconds, settings.precheck_recent_samples,
+                self._metrics,
+                anomaly.service,
+                anomaly.metric,
+                thresholds,
+                settings.precheck_window_seconds,
+                settings.precheck_recent_samples,
             )
         except MetricsUnavailableError as exc:
             logger.warning("healer.precheck_unavailable", error=str(exc))
@@ -236,7 +263,7 @@ class HealerAgent:
     # --- verification -----------------------------------------------------
 
     async def _verify(self, anomaly: AnomalyEvent, chosen: Plan) -> tuple[bool, str]:
-        """"Recovered" means the Monitor would not currently alert on this
+        """ "Recovered" means the Monitor would not currently alert on this
         anomaly — either because the metric is genuinely back within
         thresholds, or because there has been no traffic to evaluate for
         two consecutive checks (~30s). The second case is deliberately
@@ -293,15 +320,16 @@ class HealerAgent:
         )
         await self._publish(
             Channels.INCIDENT_RESOLVED,
-            incident_id=str(incident_id), anomaly_id=str(anomaly_id), outcome=outcome,
-            root_cause=root_cause, action_taken=action_taken,
+            incident_id=str(incident_id),
+            anomaly_id=str(anomaly_id),
+            outcome=outcome,
+            root_cause=root_cause,
+            action_taken=action_taken,
             resolved_at=(resolved_at or datetime.now(UTC)).isoformat(),
         )
 
     async def _publish(self, channel: str, **fields: Any) -> None:
         try:
-            await self._bus.publish(
-                channel, {"event": channel, "timestamp": datetime.now(UTC).isoformat(), **fields}
-            )
+            await self._bus.publish(channel, {"event": channel, "timestamp": datetime.now(UTC).isoformat(), **fields})
         except Exception as exc:  # noqa: BLE001 - the durable record is the DB row; events are best-effort
             logger.error("healer.publish_failed", channel=channel, error=str(exc))

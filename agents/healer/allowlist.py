@@ -34,9 +34,7 @@ def plan(decision: HealerDecision, circuits: dict[str, str] | None) -> Plan:
         return Plan("escalate", f"confidence '{decision.confidence}' is too low to act automatically")
 
     try:
-        params = validate_action(
-            decision.action, {"service": decision.service, "dependency": decision.dependency}
-        )
+        params = validate_action(decision.action, {"service": decision.service, "dependency": decision.dependency})
     except ActionRejected as exc:
         return Plan("escalate", f"rejected by the allowlist: {exc}", validated=False)
 

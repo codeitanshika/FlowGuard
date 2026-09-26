@@ -26,8 +26,7 @@ def decide(anomaly: AnomalyEvent, facts: list[SpanFact]) -> HealerDecision:
     if anomaly.service in _BREAKER_GUARDED:
         dependency = _BREAKER_GUARDED[anomaly.service]
         return HealerDecision(
-            root_cause=f"{anomaly.service} service is returning errors "
-            f"(error rate {anomaly.observed_value:.0%})",
+            root_cause=f"{anomaly.service} service is returning errors (error rate {anomaly.observed_value:.0%})",
             confidence="high",
             action="open-circuit",
             service="payment",

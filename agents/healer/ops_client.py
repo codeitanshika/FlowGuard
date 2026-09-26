@@ -23,9 +23,7 @@ class OpsClient:
 
     async def _call(self, method: str, path: str, json: dict[str, Any] | None = None) -> Any:
         try:
-            response = await self._http.request(
-                method, f"{self._base_url}{path}", headers=self._headers, json=json
-            )
+            response = await self._http.request(method, f"{self._base_url}{path}", headers=self._headers, json=json)
         except httpx.HTTPError as exc:
             raise OpsError(0, f"Ops Controller unreachable: {exc}") from exc
         if response.status_code >= 400:
@@ -43,6 +41,4 @@ class OpsClient:
         return await self._call("GET", "/ops/circuits")
 
     async def execute(self, action: str, service: str, dependency: str) -> dict[str, Any]:
-        return await self._call(
-            "POST", f"/ops/actions/{action}", json={"service": service, "dependency": dependency}
-        )
+        return await self._call("POST", f"/ops/actions/{action}", json={"service": service, "dependency": dependency})
