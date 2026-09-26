@@ -115,7 +115,8 @@ class FaultInjector:
         config = await self.current()
         if config is None:
             return
-        if random.random() > config.error_rate:
+        # Sampling whether to inject a fault, not anything security-sensitive.
+        if random.random() > config.error_rate:  # nosec B311
             return
         if config.mode == "error_500":
             raise FaultInjected(f"injected {config.mode}")
