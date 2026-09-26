@@ -1,5 +1,7 @@
-# Aggregated dependencies for ALL services, for local Phase 1/2 development
-# from a single virtualenv at the repo root (see docs/deployment/setup-guide.md).
+# Aggregated dependencies for ALL services and agents, for local development
+# and CI's unit-test job from a single virtualenv at the repo root (see
+# docs/deployment/setup-guide.md). CI installs exactly this file, so anything
+# the unit tests import must be listed here.
 # Each service's own pyproject.toml lists only what that service actually
 # uses — Phase 3's per-service Dockerfiles install from those, not this file.
 
@@ -15,6 +17,7 @@ redis>=5.0
 structlog>=24.1
 pyjwt>=2.9
 bcrypt>=4.2
+anthropic>=1.0
 opentelemetry-api>=1.27
 opentelemetry-sdk>=1.27
 opentelemetry-exporter-otlp-proto-http>=1.27
