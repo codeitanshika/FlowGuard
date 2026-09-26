@@ -1,0 +1,9 @@
+# Pinned versions of the CI tooling — the same versions the codebase was
+# linted, formatted and scanned with when Phase 12 was built, so a new
+# ruff/bandit release adding rules can't turn main red overnight.
+# Dependabot proposes bumps (see .github/dependabot.yml); a bump is a
+# reviewed PR that fixes whatever the new version finds, not a surprise.
+
+ruff==0.16.9
+bandit==1.9.4
+pip-audit==2.10.1
