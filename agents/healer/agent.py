@@ -2,7 +2,7 @@ import asyncio
 import time
 import uuid
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agents.healer import db
@@ -295,13 +295,13 @@ class HealerAgent:
             Channels.INCIDENT_RESOLVED,
             incident_id=str(incident_id), anomaly_id=str(anomaly_id), outcome=outcome,
             root_cause=root_cause, action_taken=action_taken,
-            resolved_at=(resolved_at or datetime.now(timezone.utc)).isoformat(),
+            resolved_at=(resolved_at or datetime.now(UTC)).isoformat(),
         )
 
     async def _publish(self, channel: str, **fields: Any) -> None:
         try:
             await self._bus.publish(
-                channel, {"event": channel, "timestamp": datetime.now(timezone.utc).isoformat(), **fields}
+                channel, {"event": channel, "timestamp": datetime.now(UTC).isoformat(), **fields}
             )
         except Exception as exc:  # noqa: BLE001 - the durable record is the DB row; events are best-effort
             logger.error("healer.publish_failed", channel=channel, error=str(exc))

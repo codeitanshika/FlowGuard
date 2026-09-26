@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from opentelemetry import trace
@@ -285,8 +285,8 @@ def _hash_request(payload: PaymentRequest) -> str:
 
 
 def _expiry() -> datetime:
-    return datetime.now(timezone.utc) + IDEMPOTENCY_KEY_TTL
+    return datetime.now(UTC) + IDEMPOTENCY_KEY_TTL
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

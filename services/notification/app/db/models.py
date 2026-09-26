@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, String
 from sqlalchemy import Enum as SAEnum
@@ -17,7 +17,7 @@ def _uuid() -> uuid.UUID:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class NotificationChannel(str, enum.Enum):

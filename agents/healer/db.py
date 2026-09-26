@@ -1,9 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.healer.config import get_settings
 from shared.control_plane import AgentDecision, Incident, IncidentStatus
@@ -36,7 +35,7 @@ async def update_incident(
         values["action_taken"] = action_taken
     resolved_at = None
     if status in (IncidentStatus.resolved, IncidentStatus.failed):
-        resolved_at = datetime.now(timezone.utc)
+        resolved_at = datetime.now(UTC)
         values["resolved_at"] = resolved_at
     async with SessionLocal() as db:
         await db.execute(update(Incident).where(Incident.id == incident_id).values(**values))
@@ -92,7 +91,7 @@ async def fail_stale_incidents() -> int:
             .values(
                 status=IncidentStatus.failed,
                 action_taken="abandoned: Healer restarted before the incident finished",
-                resolved_at=datetime.now(timezone.utc),
+                resolved_at=datetime.now(UTC),
             )
         )
         await db.commit()

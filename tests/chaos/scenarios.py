@@ -11,6 +11,7 @@ time, `detected_at`, `resolved_at`) so it stays correct regardless of how
 long polling itself takes; `time.monotonic()` is used only for the
 polling loops' own timeout bookkeeping, never for a reported duration."""
 
+import asyncio
 import time
 import uuid
 from dataclasses import dataclass
@@ -45,7 +46,7 @@ async def _wait_for_anomaly_and_incident(service: str, metric: str, after: datet
         anomaly = await db.latest_anomaly_after(service, metric, after)
         if anomaly is not None:
             break
-        time.sleep(3)
+        await asyncio.sleep(3)
     if anomaly is None:
         return None, None
 
@@ -54,7 +55,7 @@ async def _wait_for_anomaly_and_incident(service: str, metric: str, after: datet
         incident = await db.incident_for_anomaly(anomaly.id)
         if incident is not None and incident.resolved_at is not None:
             break
-        time.sleep(3)
+        await asyncio.sleep(3)
     return anomaly, incident
 
 

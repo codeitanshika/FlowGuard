@@ -6,7 +6,6 @@ throughout, overridable via env for CI or a non-default compose setup."""
 import os
 import time
 import uuid
-from decimal import Decimal
 from typing import Any
 
 import httpx

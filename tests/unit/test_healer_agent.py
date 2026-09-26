@@ -5,7 +5,7 @@ the plan says so."""
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 os.environ.setdefault("HEALER_DATABASE_URL", "postgresql+asyncpg://a:b@localhost/db")
@@ -36,7 +36,7 @@ class FakeDb:
     async def update_incident(self, incident_id, status, root_cause=None, action_taken=None):
         self.updates.append((status, root_cause, action_taken))
         if status in (IncidentStatus.resolved, IncidentStatus.failed):
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
     async def record_decision(self, incident_id, **kwargs):
         self.decisions.append(kwargs)

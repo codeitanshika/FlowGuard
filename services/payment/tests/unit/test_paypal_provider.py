@@ -17,7 +17,7 @@ from app.clients.paypal_errors import PayPalDecline, classify, parse_error
 from app.clients.paypal_provider import PayPalProvider
 from app.clients.paypal_webhooks import PayPalWebhookVerifier, WebhookVerificationError
 from shared.errors import DependencyUnavailableError
-from shared.fault_injection import FaultInjected, FaultInjector
+from shared.fault_injection import FaultInjected
 
 
 def client_for(handler) -> httpx.AsyncClient:

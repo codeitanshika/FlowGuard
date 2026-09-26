@@ -1,7 +1,8 @@
 import asyncio
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 import redis.asyncio as redis
 from pydantic import BaseModel, Field

@@ -1,6 +1,5 @@
-from shared.db import build_get_db, create_engine, create_session_factory, ping_database
-
 from app.core.config import get_settings
+from shared.db import build_get_db, create_engine, create_session_factory, ping_database
 
 settings = get_settings()
 engine = create_engine(settings.database_url)

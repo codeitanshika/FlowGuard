@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,5 +34,5 @@ async def record_received(db: AsyncSession, action: str, raw_params: object, cal
 async def finish(db: AsyncSession, row: OpsAction, status: str, detail: str) -> None:
     row.status = status
     row.detail = detail[:1000]
-    row.completed_at = datetime.now(timezone.utc)
+    row.completed_at = datetime.now(UTC)
     await db.commit()

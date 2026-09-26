@@ -1,0 +1,46 @@
+# One ruff config for every service, agent, shared/ and tests/ — see
+# docs/CODE_STANDARDS.md. Ruff does both linting and formatting here
+# (docs/decisions/ADR-0019: one tool instead of ruff + black).
+
+target-version = "py312"
+line-length = 120
+
+extend-exclude = [".venv", "dashboard"]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes: unused imports/variables, undefined names
+    "I",    # import sorting
+    "B",    # bugbear: likely bugs (mutable defaults, bare raise-from, ...)
+    "UP",   # pyupgrade: modern syntax for the 3.12 target
+    "ASYNC" # async footguns (blocking calls inside async functions)
+]
+ignore = [
+    # `class X(str, Enum)` -> StrEnum changes str()/f-string behaviour for
+    # values that are persisted (SQLAlchemy enums) and serialized; not worth
+    # the risk for a stylistic gain.
+    "UP042",
+    # PEP 695 generic syntax for shared.schemas.Envelope[T]; equivalent, churn only.
+    "UP046",
+]
+
+[lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom is a call in a default argument
+# (`db: AsyncSession = Depends(get_db)`); B008 would flag every route.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query", "fastapi.Body"]
+
+[lint.isort]
+# Every top-level package below is first-party. `app` is the package name
+# each service uses for its own code (see services/payment/tests/conftest.py
+# for why that name is shared).
+known-first-party = ["app", "shared", "agents", "tests"]
+
+[lint.per-file-ignores]
+# LLM system prompts: long prose lines are deliberate — wrapping them would
+# change the exact text the model sees (and prompt versions are recorded).
+"agents/healer/diagnosis.py" = ["E501"]
+"agents/fraud/narrative.py" = ["E501"]
+# Test fixtures deliberately import after setting env vars (see
+# tests/unit/test_healer_agent.py) — that ordering is the point.
+"tests/**" = ["E402"]

@@ -13,7 +13,7 @@ and sidesteps that entirely."""
 
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -61,4 +61,4 @@ async def incident_for_anomaly(anomaly_id) -> Incident | None:
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

@@ -154,6 +154,7 @@ def get_paypal_provider() -> PayPalProvider:
 def get_paypal_webhook_verifier() -> PayPalWebhookVerifier:
     if _paypal_webhook_verifier is None:
         raise NotFoundError(
-            "PayPal webhook verification is not configured (PAYPAL_WEBHOOK_ID unset, or PayPal isn't the active provider)"
+            "PayPal webhook verification is not configured "
+            "(PAYPAL_WEBHOOK_ID unset, or PayPal isn't the active provider)"
         )
     return _paypal_webhook_verifier

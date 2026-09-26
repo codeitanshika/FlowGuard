@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import redis.asyncio as redis
@@ -7,7 +7,7 @@ from agents.fraud import db
 from agents.fraud.config import Settings
 from agents.fraud.freeze_client import FreezeClient, FreezeError
 from agents.fraud.geo import is_geo_anomaly
-from agents.fraud.narrative import Narrator, PROMPT_VERSION
+from agents.fraud.narrative import PROMPT_VERSION, Narrator
 from agents.fraud.risk import decide
 from agents.fraud.schemas import PaymentCreatedEvent
 from agents.fraud.velocity import VelocityTracker
@@ -150,7 +150,7 @@ class FraudAgent:
                     "reason": reason,
                     "risk_assessment_id": None,
                     "trace_id": event.trace_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
         except Exception as exc:  # noqa: BLE001 - the durable record is the DB row + User Service's freeze_events

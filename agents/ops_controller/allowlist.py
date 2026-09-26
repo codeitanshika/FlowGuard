@@ -10,8 +10,8 @@ Deliberately absent for now: `restart-service` (needs Docker-socket access,
 a much larger blast radius) and `shed-traffic` (needs Gateway support that
 does not exist). Both remain in ADR-0005's eventual list."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 from pydantic import BaseModel, ConfigDict
 

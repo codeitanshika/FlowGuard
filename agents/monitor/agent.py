@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agents.monitor.alert_state import AlertDeduper
 from agents.monitor.config import Settings
@@ -110,7 +110,7 @@ class MonitorAgent:
                     "threshold": breach.threshold,
                     "severity": breach.severity,
                     "trace_id": breach.trace_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
         except Exception:
