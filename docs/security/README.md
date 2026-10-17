@@ -115,18 +115,39 @@ The freeze mutation itself still only happens through User Service's
 `/internal/users/{id}/freeze`, called with the deterministic reason as
 the record.
 
+## Phase 13: The Production Network Surface Is Exactly One Port
+
+The single-VM deployment ([ADR-0020](../decisions/ADR-0020-single-vm-production-deployment.md))
+publishes nothing but Caddy's 80/443 — every other service, including
+Postgres, Redis, and Jaeger, has no host-published port at all on the
+real VM, confirmed against actually-running containers
+(`docker compose ps`), not just the compose file. This is the thing that
+makes the "Known Gaps" entry below still true in production rather than
+only in local dev: internal services having no auth of their own is
+acceptable specifically because nothing outside the VM can reach them to
+begin with.
+
+Fronting the Gateway with a proxy introduced a new, separate issue:
+without `GATEWAY_TRUST_PROXY_HEADERS`, every caller's address would
+appear as Caddy's own container IP, defeating the login rate limiter's
+per-IP keying. See ADR-0020 and `services/gateway/tests/unit/test_proxy_headers.py`
+for the bug and its fix.
+
 ## Known Gaps
 
 Internal service-to-service calls (Payment → Fraud, Payment → User, Ops
 Controller → Payment's breaker endpoints, Fraud Agent → User's freeze
 endpoint once it exists) still have no authentication of their own — they
 rely entirely on network isolation (`/internal/*` never being reachable
-through the Gateway). A caller with direct network access to a service's
-internal port can call it unauthenticated. Acceptable for local development
-and the current single-network deployment target; worth a dedicated
-internal-service token before this runs on shared infrastructure with less
-network isolation. (The Ops Controller itself is the exception: it does
-authenticate its caller.)
+through the Gateway, and, as of Phase 13, no service but Caddy having a
+published port at all on the real deployment target). A caller with
+direct network access to a service's internal port — from inside the VM,
+or in local dev — can call it unauthenticated. Acceptable while that
+network boundary holds; worth a dedicated internal-service token before
+this ever runs on shared infrastructure with less isolation (e.g.
+multiple VMs on one network, or a future move to a real orchestrator).
+(The Ops Controller itself is the exception: it does authenticate its
+caller.)
 
 Also: `OPS_HEALER_TOKEN` is a single static shared secret with no rotation
 mechanism; calls to routes that do not exist are not audited.
