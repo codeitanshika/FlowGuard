@@ -1,0 +1,188 @@
+# Production overlay for the single-VM target (ADR-0020) — applied on top
+# of the root docker-compose.yml (for the service definitions themselves)
+# and docker-compose.images.yml (for `image:`, so nothing is built on the
+# VM). Two things needed real care:
+#
+# 1. Compose merges list fields like `ports:` by appending, not replacing,
+#    so simply omitting `ports:` here would leave every service's
+#    local-dev port (published for host-machine convenience) exposed to
+#    the public internet too. Every service below explicitly clears it
+#    with the Compose Specification's `!reset` tag (confirmed against the
+#    installed Docker Compose v5.3.1 before relying on it: `ports: !reset
+#    []` removes the key from the merged config entirely, it does not
+#    merge an empty list with the base's) so only `caddy`'s own `ports:`
+#    entry survives into the merged config — verified by rendering it
+#    with `docker compose config` and grepping for `published:`.
+# 2. Every real secret (GATEWAY_CLIENTS, GATEWAY_JWT_SECRET, OPS_HEALER_TOKEN,
+#    POSTGRES_PASSWORD, ...) is passed through top-level `${VAR}` references,
+#    never `env_file:`. Verified empirically: an env_file-sourced value
+#    containing `$word`-shaped substrings gets silently mangled by Compose's
+#    own env-file parser (this is *why* docker-compose.yml's own GATEWAY_CLIENTS
+#    needed the `$$`-escaped literal override) — but a value substituted via
+#    `${VAR}` from an externally-exported shell variable passes through
+#    completely unmangled, no escaping needed. Deploy (infra/scripts/deploy.sh)
+#    `source`s the production secrets file with `set -a` before running this,
+#    so every secret becomes exactly such a variable.
+#
+# Used with docker-compose.images.yml (pulls, never builds) — see
+# infra/scripts/deploy.sh and docs/deployment/setup-guide.md:
+#
+#   docker compose -f docker-compose.yml -f infra/docker/docker-compose.images.yml \
+#     -f infra/docker/docker-compose.prod.yml up -d --no-build --wait
+#
+# (docker-compose.yml still supplies the `build:`-bearing service definitions
+# that .images.yml's image: overrides and this file's environment/ports
+# overrides both layer on top of — Compose needs a service to already exist
+# before another file can override its fields.)
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the production secrets file}
+    ports: !reset []
+    restart: unless-stopped
+
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+
+  jaeger:
+    # Traces can include request/response attributes — not something to
+    # publish to the public internet. Reach it when needed via an SSH
+    # tunnel: `ssh -L 16686:localhost:16686 ubuntu@<host>`.
+    ports: !reset []
+    restart: unless-stopped
+
+  user:
+    environment:
+      USER_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_user
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports: !reset []
+    restart: unless-stopped
+
+  fraud:
+    environment:
+      FRAUD_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_fraud
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports: !reset []
+    restart: unless-stopped
+
+  notification:
+    environment:
+      NOTIFICATION_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_notification
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports: !reset []
+    restart: unless-stopped
+
+  payment:
+    environment:
+      PAYMENT_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_payment
+      REDIS_URL: redis://redis:6379/0
+      PAYMENT_FRAUD_SERVICE_URL: http://fraud:8002
+      PAYMENT_USER_SERVICE_URL: http://user:8003
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      # PayPal (ADR-0017) — optional; defaults match services/payment's own
+      # Settings defaults, so leaving these unset in production keeps the
+      # mock provider, exactly like local dev.
+      PAYMENT_PROVIDER_BACKEND: ${PAYMENT_PROVIDER_BACKEND:-mock}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+    ports: !reset []
+    restart: unless-stopped
+
+  gateway:
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      GATEWAY_PAYMENT_SERVICE_URL: http://payment:8001
+      GATEWAY_USER_SERVICE_URL: http://user:8003
+      GATEWAY_NOTIFICATION_SERVICE_URL: http://notification:8004
+      GATEWAY_FRAUD_SERVICE_URL: http://fraud:8002
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      # No defaults on the two below — a production deployment missing
+      # either must fail at startup, not silently run unauthenticated or
+      # with an empty client list (the same reasoning as ADR-0010, and the
+      # same fail-fast `:?` guard as POSTGRES_PASSWORD above).
+      GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:?set GATEWAY_JWT_SECRET in the production secrets file}
+      GATEWAY_CLIENTS: ${GATEWAY_CLIENTS:?set GATEWAY_CLIENTS in the production secrets file — see the setup guide, NOT the test-merchant values from .env.example}
+      GATEWAY_JWT_EXPIRES_IN: ${GATEWAY_JWT_EXPIRES_IN:-3600}
+      GATEWAY_RATE_LIMIT_PER_MINUTE: ${GATEWAY_RATE_LIMIT_PER_MINUTE:-100}
+      GATEWAY_LOGIN_RATE_LIMIT_PER_MINUTE: ${GATEWAY_LOGIN_RATE_LIMIT_PER_MINUTE:-10}
+      # See GATEWAY_TRUST_PROXY_HEADERS in services/gateway/app/core/config.py
+      # — without this, Caddy's own IP, not the real caller's, is what the
+      # login rate limiter and every structured log see.
+      GATEWAY_TRUST_PROXY_HEADERS: "true"
+    ports: !reset []
+    restart: unless-stopped
+
+  monitor:
+    environment:
+      MONITOR_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_control
+      MONITOR_JAEGER_QUERY_URL: http://jaeger:16686
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports: !reset []
+    restart: unless-stopped
+
+  ops-controller:
+    environment:
+      OPS_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_control
+      OPS_PAYMENT_SERVICE_URL: http://payment:8001
+      OPS_HEALER_TOKEN: ${OPS_HEALER_TOKEN:?set OPS_HEALER_TOKEN in the production secrets file (shared with healer below)}
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports: !reset []
+    restart: unless-stopped
+
+  healer:
+    environment:
+      HEALER_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_control
+      HEALER_JAEGER_QUERY_URL: http://jaeger:16686
+      HEALER_OPS_CONTROLLER_URL: http://ops-controller:8006
+      OPS_HEALER_TOKEN: ${OPS_HEALER_TOKEN:?set OPS_HEALER_TOKEN in the production secrets file}
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      # Optional — the Healer falls back to its deterministic rules
+      # without it (ADR-0015), exactly like local dev.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports: !reset []
+    restart: unless-stopped
+
+  fraud-agent:
+    environment:
+      FRAUD_AGENT_DATABASE_URL: postgresql+asyncpg://flowguard:${POSTGRES_PASSWORD}@postgres:5432/flowguard_control
+      FRAUD_AGENT_USER_SERVICE_URL: http://user:8003
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      # Optional — falls back to the rules-based narrative (ADR-0016).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports: !reset []
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME:?set DOMAIN_NAME in the production secrets file — Caddy requests its Lets Encrypt certificate for exactly this name}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Relative paths in volumes: resolve against the *project* directory
+      # (the first -f file's directory — repo root, since docker-compose.yml
+      # is always listed first), not this file's own directory in
+      # infra/docker/ — confirmed with an isolated test after `../../Caddyfile`
+      # resolved two directories above the repo root instead of to it.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

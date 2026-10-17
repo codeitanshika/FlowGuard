@@ -1,0 +1,16 @@
+# Reverse proxy for the production deployment (ADR-0020) — the only
+# internet-facing entry point; everything else stays on the compose
+# network. Caddy requests and renews its Let's Encrypt certificate for
+# {$DOMAIN_NAME} automatically; that requires DOMAIN_NAME's DNS A record
+# to already point at this host's public IP (see the setup guide for the
+# provisioning order) and ports 80+443 reachable from the internet.
+{$DOMAIN_NAME} {
+	reverse_proxy gateway:8000
+
+	encode gzip
+
+	log {
+		output stdout
+		format json
+	}
+}
