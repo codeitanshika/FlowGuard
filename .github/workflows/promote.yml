@@ -71,7 +71,7 @@ jobs:
     # job says so plainly and stops rather than failing confusingly on a
     # missing secret deep inside deploy.sh.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check a deploy target is configured
         id: target
         run: |
