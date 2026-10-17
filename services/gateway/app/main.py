@@ -52,3 +52,16 @@ app.include_router(auth_router)
 # /api/v1/debug/fault-inject and 404 it against the route table.
 app.include_router(debug_router)
 app.include_router(build_proxy_router(route_table))
+
+if settings.trust_proxy_headers:
+    # Wraps the fully-assembled app as the outermost ASGI layer — requests
+    # are rewritten before TraceIdMiddleware, FaultInjectionMiddleware, or
+    # any route handler sees them, so every X-Trace-Id log line, the login
+    # rate limiter, and anything else keyed on the caller's address all see
+    # the real client. Must come after instrument_fastapi(app): that call
+    # instruments the FastAPI instance itself, not a generic ASGI callable.
+    # See GATEWAY_TRUST_PROXY_HEADERS in core/config.py for why this is
+    # safe to trust unconditionally (trusted_hosts="*") specifically here.
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    app = ProxyHeadersMiddleware(app, trusted_hosts="*")  # type: ignore[assignment]

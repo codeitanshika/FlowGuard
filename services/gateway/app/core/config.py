@@ -33,6 +33,16 @@ class Settings(BaseServiceSettings):
     rate_limit_per_minute: int = 100
     login_rate_limit_per_minute: int = 10
 
+    # Off by default — local dev and tests see the raw TCP peer, exactly as
+    # before. A production deployment behind Caddy (ADR-0020) sets this,
+    # or every caller's request.client.host is Caddy's own container IP:
+    # the per-IP login rate limiter (app/api/auth.py) would key every real
+    # user's login attempt as "the same client", sharing one 10/min budget
+    # across the whole internet. Safe to trust unconditionally here
+    # (app/main.py) specifically because nothing in the production topology
+    # can reach this service directly — Caddy is the only path in.
+    trust_proxy_headers: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

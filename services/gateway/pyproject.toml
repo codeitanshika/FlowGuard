@@ -27,3 +27,11 @@ dependencies = [
 # packages = [].
 [tool.setuptools]
 packages = []
+
+# Run with: cd services/gateway && python -m pytest
+# Separate from the root `python -m pytest` (tests/) — see
+# services/payment/tests/conftest.py for why (every service's code lives
+# under the same `app` package name).
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
