@@ -502,6 +502,124 @@ they had not run on GitHub's runners when this was written. Watch the first
 run in the *Actions* tab; failures there should be about permissions, the
 registry or caching rather than about the code.
 
+## Cloud Deployment (Phase 13)
+
+Design, trade-offs, and everything checked without touching a real cloud
+account: [ADR-0020](../decisions/ADR-0020-single-vm-production-deployment.md).
+This provisions one real, billed VM — nothing here runs automatically;
+every step below is something you run yourself with your own cloud
+account and your own domain.
+
+### 1. Provision the VM
+
+```bash
+cd infra/terraform
+terraform init
+terraform apply \
+  -var='ssh_public_key=ssh-ed25519 AAAA... you@example.com' \
+  -var='allowed_ssh_cidr=<your IP>/32' \
+  -var='domain_name=flowguard.example.com'
+```
+
+Needs AWS credentials in your environment (`aws configure`, or the usual
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`). Note the two outputs:
+`public_ip` and `ssh_keyscan_command`.
+
+### 2. Point DNS at it, then pin the host key
+
+Create an A record for `domain_name` pointing at `public_ip` — Caddy's
+certificate request fails until this resolves, so do it now and let it
+propagate while you continue. Then run the printed `ssh_keyscan_command`;
+its output is the `DEPLOY_HOST_KEY` secret (step 4) — this pins the real
+host key instead of trust-on-first-connect.
+
+### 3. Generate the production secrets
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # GATEWAY_JWT_SECRET
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # OPS_HEALER_TOKEN
+python -c "import secrets; print(secrets.token_urlsafe(24))"   # POSTGRES_PASSWORD
+```
+
+Hash a real client secret the same way `.env.example`'s test credentials
+were made (`passlib`/`bcrypt`, cost 12) to build a real `GATEWAY_CLIENTS`
+— **do not reuse the `test-merchant`/`readonly-client` values from
+`.env.example` in production.**
+
+Build the production secrets file (call it e.g. `flowguard.env.production`,
+**not** `.env` — it is not the same format):
+
+```ini
+POSTGRES_PASSWORD='<generated>'
+GATEWAY_JWT_SECRET='<generated>'
+GATEWAY_CLIENTS='{"your-client":{"secret_hash":"$2b$12$...","scopes":[...]}}'
+OPS_HEALER_TOKEN='<generated>'
+DOMAIN_NAME='flowguard.example.com'
+# Optional: ANTHROPIC_API_KEY, PAYMENT_PROVIDER_BACKEND, PAYPAL_CLIENT_ID,
+# PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID
+```
+
+**This file is `source`d by a shell (`deploy.sh`), not read by
+pydantic-settings — unlike `.env`/`.env.example`, single-quote any value
+containing a literal `$`** (every bcrypt hash). An unquoted `$2b$12$...`
+here is a real, easy mistake — `deploy.sh` runs `bash -n` on it first and
+fails clearly rather than deploying a broken value, but it is worth
+getting right before you need that safety net.
+
+### 4. Configure the GitHub repository
+
+*Settings → Environments* (if you haven't already from Phase 12):
+`staging` and `production`, the latter with **Required reviewers**
+enabled — that approval is the only thing gating a real rollout.
+
+*Settings → Secrets and variables → Actions*, on the `production`
+environment:
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_HOST` | Terraform's `public_ip` output |
+| `DEPLOY_SSH_KEY` | the **private** key matching `ssh_public_key` |
+| `DEPLOY_HOST_KEY` | output of step 2's `ssh_keyscan_command` |
+| `PRODUCTION_ENV_FILE` | the full contents of step 3's file |
+
+### 5. Release
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Approve the `production` deployment when prompted. `promote.yml` re-tags
+the already-built, already-staging-verified images for this commit (never
+rebuilding) and its `deploy` job runs `infra/scripts/deploy.sh` — copies
+the compose files, writes the secrets file, pulls, starts the stack with
+`--wait`, then confirms `https://<domain>/health` through Caddy for real.
+If `DEPLOY_HOST` isn't set yet, this step says so plainly and stops
+instead of failing confusingly.
+
+### Rollback
+
+Actions tab → **Rollback production** → run workflow → the tag to revert
+to (any tag that previously made it through `promote.yml`, e.g. `v1.0.0`).
+Identical mechanism to a release, just pointed at an older, already-
+published tag — never a rebuild.
+
+### Operating the box
+
+```bash
+ssh ubuntu@<public_ip>                               # direct access
+ssh -L 16686:localhost:16686 ubuntu@<public_ip>      # Jaeger UI (not public — see ADR-0020)
+cd /opt/flowguard && docker compose \
+  -f docker-compose.yml -f infra/docker/docker-compose.images.yml \
+  -f infra/docker/docker-compose.prod.yml logs -f gateway
+```
+
+**Not yet confirmed on a real cloud account:** `terraform apply`, the
+real SSH deploy, and real Let's Encrypt issuance were never run — only
+`init`/`validate`/`plan` (which got as far as a real AWS API call before
+failing on dummy credentials), a local Compose smoke test, and a real
+`caddy validate`. Watch the first real `apply` and first real deploy
+closely.
+
 ## Viewing Traces in Jaeger
 
 Every service exports spans to Jaeger as of Phase 4. Make the payment
