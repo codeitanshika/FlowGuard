@@ -1,0 +1,7 @@
+# Shell scripts need real LF line endings — a literal CR before the
+# newline is a syntax error (bash: "unexpected EOF", confirmed hitting
+# this for real while writing infra/scripts/deploy.sh on this Windows
+# checkout, where Git's own autocrlf conversion is what introduced the
+# CRs in the first place). This forces LF on checkout and commit
+# regardless of autocrlf, so it can't recur for this or any later script.
+*.sh text eol=lf
