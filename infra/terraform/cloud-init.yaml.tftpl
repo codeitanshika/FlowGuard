@@ -1,0 +1,41 @@
+#cloud-config
+# Provisions the box only — installs Docker and creates the directory CD
+# deploys into. It deliberately does NOT start the FlowGuard stack:
+# building the images, writing the real .env, and running `docker compose
+# up` is CD's job (infra/scripts/deploy.sh over SSH), not Terraform's — see
+# ADR-0019's build-once-promote design and ADR-0020. Keeping "provision"
+# and "deploy" as two separate steps with two separate owners means a
+# redeploy (a new release, or a rollback) never needs to touch Terraform.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+
+write_files:
+  - path: /etc/flowguard-project
+    content: "${project}"
+
+runcmd:
+  # Docker's own documented apt install — official GPG key + repo, not a
+  # piped curl|sh script.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - >-
+    echo "deb [arch=$(dpkg --print-architecture)
+    signed-by=/etc/apt/keyrings/docker.asc]
+    https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable"
+    > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - usermod -aG docker ubuntu
+  - mkdir -p /opt/${project}
+  - chown ubuntu:ubuntu /opt/${project}
+  # Ubuntu's docker.io/docker-ce package enables+starts the daemon itself;
+  # containers with `restart: unless-stopped` come back on reboot with no
+  # extra systemd unit needed.
+  - systemctl enable docker

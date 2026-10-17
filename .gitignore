@@ -2,3 +2,14 @@
 __pycache__
 *.pyc
 .venv
+
+# Terraform (infra/terraform/) — downloaded provider plugins/local state,
+# never committed. .terraform.lock.hcl (the provider *version* lock) is
+# the opposite: that one IS meant to be committed, same spirit as a
+# language lockfile, so it's deliberately not listed here.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
