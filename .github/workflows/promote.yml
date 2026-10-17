@@ -62,13 +62,36 @@ jobs:
             "${SRC}"
 
   deploy:
-    name: Deploy
+    name: Deploy to the VM
     needs: promote
     runs-on: ubuntu-latest
     # No `environment:` here on purpose: approval is already required once, on
-    # `promote`. Phase 13 adds the real rollout step and should gate it.
+    # `promote`. If DEPLOY_HOST isn't configured yet (no VM provisioned —
+    # see ADR-0020, infra/terraform/ was deliberately never applied), this
+    # job says so plainly and stops rather than failing confusingly on a
+    # missing secret deep inside deploy.sh.
     steps:
-      - name: Deployment target
+      - uses: actions/checkout@v4
+      - name: Check a deploy target is configured
+        id: target
         run: |
-          echo "::notice::Images are promoted (ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/flowguard-*:production and :${GITHUB_REF_NAME})."
-          echo "::notice::Rolling them out to a host is Phase 13 (cloud deployment); there is no deployment target yet."
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then
+            echo "::notice::DEPLOY_HOST isn't set — no VM has been provisioned yet (infra/terraform/ was never applied, see ADR-0020). Images are promoted to :production and :${GITHUB_REF_NAME}; apply the Terraform yourself and configure the deploy secrets (see the setup guide) to enable this step."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Registry namespace (GHCR requires lowercase)
+        if: steps.target.outputs.configured == 'true'
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - name: Deploy this release to the VM
+        if: steps.target.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+        run: |
+          export IMAGE_REGISTRY="ghcr.io/${OWNER}"
+          DOMAIN_NAME=$(sed -n "s/^DOMAIN_NAME=//p" <<<"$PRODUCTION_ENV_FILE" | tr -d \''"')
+          infra/scripts/deploy.sh "${GITHUB_REF_NAME}" "${DOMAIN_NAME:?DOMAIN_NAME missing from PRODUCTION_ENV_FILE}"
