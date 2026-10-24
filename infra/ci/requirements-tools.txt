@@ -4,6 +4,6 @@
 # Dependabot proposes bumps (see .github/dependabot.yml); a bump is a
 # reviewed PR that fixes whatever the new version finds, not a surprise.
 
-ruff==0.16.9
+ruff==0.17.1
 bandit==1.9.4
 pip-audit==2.10.1
