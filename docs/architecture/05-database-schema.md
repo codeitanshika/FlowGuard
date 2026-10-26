@@ -161,6 +161,7 @@ CREATE TABLE agent_decisions (
     llm_latency_ms       INTEGER,
     llm_tokens_in        INTEGER,
     llm_tokens_out        INTEGER,
+    llm_cost_usd          NUMERIC(12,8),      -- computed from llm_tokens_* at write time (Phase 14, shared/llm_pricing.py); null whenever those are null
     decision                JSONB NOT NULL,
     validated                 BOOLEAN NOT NULL,
     executed                     BOOLEAN NOT NULL,

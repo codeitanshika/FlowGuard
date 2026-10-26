@@ -89,6 +89,10 @@ class AgentDecision(Base):
     llm_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     llm_tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
     llm_tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Dollars, computed from llm_tokens_* at write time (shared/llm_pricing.py).
+    # Null whenever llm_tokens_* are null (rules fallback) or the model isn't
+    # in the price table — never backfilled from a guess.
+    llm_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
     decision: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     validated: Mapped[bool] = mapped_column(Boolean, nullable=False)
     executed: Mapped[bool] = mapped_column(Boolean, nullable=False)

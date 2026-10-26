@@ -4,6 +4,7 @@ from typing import Any
 from agents.fraud.config import get_settings
 from shared.control_plane import AgentDecision
 from shared.db import create_engine, create_session_factory, ping_database
+from shared.llm_pricing import cost_usd
 
 settings = get_settings()
 engine = create_engine(settings.database_url)
@@ -39,6 +40,7 @@ async def record_decision(
             llm_latency_ms=llm_latency_ms,
             llm_tokens_in=llm_tokens_in,
             llm_tokens_out=llm_tokens_out,
+            llm_cost_usd=cost_usd(llm_model, llm_tokens_in, llm_tokens_out),
         )
         db.add(row)
         await db.commit()
