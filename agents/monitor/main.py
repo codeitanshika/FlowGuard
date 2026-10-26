@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager, suppress
 import httpx
 import redis.asyncio as redis
 from fastapi import FastAPI
+from prometheus_client import make_asgi_app
 
 from agents.monitor.agent import MonitorAgent
 from agents.monitor.alert_state import AlertDeduper
@@ -71,3 +72,7 @@ instrument_fastapi(app)
 app.add_middleware(TraceIdMiddleware, service_name=settings.service_name)
 register_exception_handlers(app)
 app.include_router(build_health_router(is_ready))
+# Exposition of the snapshot already computed in agent.py each poll cycle
+# (agents/monitor/metrics_export.py) — not instrumented traffic of its own,
+# same reasoning as the httpx/redis exclusion above.
+app.mount("/metrics", make_asgi_app())

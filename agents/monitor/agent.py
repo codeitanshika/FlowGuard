@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 
+from agents.monitor import metrics_export
 from agents.monitor.alert_state import AlertDeduper
 from agents.monitor.config import Settings
 from agents.monitor.db import SessionLocal, save_anomaly
@@ -58,6 +59,7 @@ class MonitorAgent:
     async def _check_service(self, service: str) -> None:
         samples, truncated = await self._metrics.fetch_samples(service, self._settings.window_seconds)
         snapshot = compute_snapshot(service, samples, self._settings.window_seconds, truncated)
+        metrics_export.update(snapshot)
         logger.info(
             "monitor.snapshot",
             service=service,
