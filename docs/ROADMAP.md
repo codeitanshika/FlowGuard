@@ -24,7 +24,7 @@ see the working style in [architecture/README.md](architecture/README.md).
 | 11 | Testing + chaos testing: unit, integration, API, failure, agent tests; MTTR/recovery-rate measurement | ✅ Done — see [ADR-0018](decisions/ADR-0018-chaos-testing-measures-real-mttr.md). 143 unit + 17 integration + 2 chaos tests; chaos testing found and fixed two real bugs (no Redis reconnect; the Healer's verifier could get stuck once a partially-failing dependency self-healed); a real MTTR run: 100% recovery, mean 58-60s, well inside NFR11's 120s budget |
 | 12 | CI/CD: GitHub Actions — lint, format, tests, security checks, Docker build, staging/production pipeline | ✅ Done — see [ADR-0019](decisions/ADR-0019-cicd-build-once-promote-the-artifact.md). Every gate was run locally against the real codebase first (which found a missing test dependency and a ~10% flaky test); the workflows themselves pass actionlint and the published schemas but have **not yet run on GitHub's runners** |
 | 13 | Cloud deployment: simple architecture (no Kubernetes), networking, secrets, HTTPS, rollback strategy | ✅ Done — see [ADR-0020](decisions/ADR-0020-single-vm-production-deployment.md). One EC2 VM + Caddy, Terraform built and validated (fmt/init/validate/a real plan against AWS) but deliberately never applied — no real cloud account was provisioned; found and fixed two real bugs along the way (Compose's `ports:` list-append would have exposed every internal service to the internet; fronting the Gateway with a proxy silently breaks its IP-based rate limiter) |
-| 14 | SRE + production monitoring: availability, error rate, latency, MTTR, agent decisions, LLM cost/latency dashboards and alerts | Planned |
+| 14 | SRE + production monitoring: availability, error rate, latency, MTTR, agent decisions, LLM cost/latency dashboards and alerts | ✅ Done — see [ADR-0021](decisions/ADR-0021-grafana-prometheus-monitoring-reusing-what-already-exists.md). Prometheus + Grafana, reusing data every agent already computes; `agent_decisions` gained a real `llm_cost_usd` column (closing an actual NFR10 gap). Verified live: a real chaos run produced real dashboard rows, and a sustained real fault made the error-rate alert actually fire and deliver a webhook, confirmed from the receiver's own logs |
 | 15 | AI evaluation + safety: incident evaluation dataset, detection/root-cause/action accuracy, false positive/negative rates, prompt/version tracking | Planned |
 
 ## Current Component Set (as of Phase 0)
@@ -32,7 +32,7 @@ see the working style in [architecture/README.md](architecture/README.md).
 - **Services:** `gateway`, `user`, `payment`, `fraud`, `notification`
 - **Agents:** `monitor`, `healer`, `fraud` (agent — distinct from the Fraud *Service*)
 - **Control-plane support:** Ops Controller (allowlisted action executor, see [ADR-0005](decisions/ADR-0005-llm-actions-via-allowlisted-executor.md))
-- **Infra:** Redis, PostgreSQL (database-per-service), OpenTelemetry Collector, Jaeger
+- **Infra:** Redis, PostgreSQL (database-per-service), Jaeger; Prometheus + Grafana for monitoring (Phase 14, operator-only overlay)
 
 No dashboard/UI service is currently planned — Phase 14's "dashboards" refers
 to operational monitoring dashboards (e.g. Grafana or Jaeger itself), not a

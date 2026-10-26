@@ -26,3 +26,4 @@ the order they were made; a superseded ADR is marked, never deleted.
 | [0018](ADR-0018-chaos-testing-measures-real-mttr.md) | Chaos tests measure real MTTR from authoritative timestamps, not inferred behavior |
 | [0019](ADR-0019-cicd-build-once-promote-the-artifact.md) | CI/CD builds once and promotes the artifact; one tool for style; every gate checked before it was wired in |
 | [0020](ADR-0020-single-vm-production-deployment.md) | A single VM behind Caddy, Terraform built but not applied, secrets never through env_file |
+| [0021](ADR-0021-grafana-prometheus-monitoring-reusing-what-already-exists.md) | Grafana + Prometheus for monitoring, reusing what already exists rather than a new metrics pipeline |

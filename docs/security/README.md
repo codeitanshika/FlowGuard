@@ -133,6 +133,17 @@ appear as Caddy's own container IP, defeating the login rate limiter's
 per-IP keying. See ADR-0020 and `services/gateway/tests/unit/test_proxy_headers.py`
 for the bug and its fix.
 
+## Phase 14: Monitoring Is Operator-Only, Same Posture as the Ops Controller
+
+Prometheus, Grafana, and the local alert-verification webhook
+(`infra/docker/docker-compose.monitoring.yml`, [ADR-0021](../decisions/ADR-0021-grafana-prometheus-monitoring-reusing-what-already-exists.md))
+publish nothing beyond that overlay — none of the three are in
+`docker-compose.prod.yml`, the same loopback-only posture the Ops
+Controller has had since Phase 8. Grafana's default admin password and
+its Postgres datasource credential are both the same local-dev
+convenience values every other service in `docker-compose.yml` already
+uses — real values for a real deployment, not secrets to rotate here.
+
 ## Known Gaps
 
 Internal service-to-service calls (Payment → Fraud, Payment → User, Ops

@@ -620,6 +620,44 @@ failing on dummy credentials), a local Compose smoke test, and a real
 `caddy validate`. Watch the first real `apply` and first real deploy
 closely.
 
+## Monitoring: Prometheus + Grafana (Phase 14)
+
+Operator-only dashboards and alerting — see
+[ADR-0021](../decisions/ADR-0021-grafana-prometheus-monitoring-reusing-what-already-exists.md).
+Not part of `docker-compose.prod.yml`; bring it up alongside the main
+stack with an extra `-f`:
+
+```bash
+docker compose -f docker-compose.yml -f infra/docker/docker-compose.monitoring.yml up -d
+```
+
+Then open `http://localhost:3000` (user `admin`, password
+`flowguard` — the `GF_SECURITY_ADMIN_PASSWORD` set in the overlay, the
+same local-dev-convenience posture as every other default credential in
+this repo). Three dashboards are provisioned under the **FlowGuard**
+folder:
+
+- **Service Health** — availability, error rate, p95/p99 latency, and
+  throughput per service, from Prometheus (which scrapes the Monitor
+  Agent's `/metrics`, port 8005 — `http://localhost:9090/targets` shows
+  the scrape itself).
+- **Self-Healing** — MTTR trend, incident outcomes, and rules-vs-LLM
+  decision source, queried directly from `flowguard_control` via
+  Grafana's Postgres datasource.
+- **LLM Cost & Latency** — per-decision token counts, latency, and the
+  real dollar cost (`agent_decisions.llm_cost_usd`, computed from
+  `shared/llm_pricing.py`), also from Postgres.
+
+Two alert rules are provisioned (Grafana's own unified alerting, no
+separate Alertmanager): an error-rate threshold against Prometheus, and
+"an incident has been open longer than the NFR11 120s budget" against
+Postgres. Both route to a contact point pointed at
+`infra/monitoring/alertsink/` — a disposable local webhook receiver for
+verifying delivery (`docker compose logs alertsink`), **not** a real
+notification channel. Point `infra/monitoring/grafana/provisioning/alerting/contactpoints.yml`
+at a real Slack/PagerDuty webhook before relying on this anywhere beyond
+a workstation.
+
 ## Viewing Traces in Jaeger
 
 Every service exports spans to Jaeger as of Phase 4. Make the payment
