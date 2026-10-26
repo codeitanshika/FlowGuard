@@ -1,0 +1,68 @@
+{
+  "uid": "flowguard-self-healing",
+  "title": "FlowGuard — Self-Healing",
+  "tags": ["flowguard"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Mean Time To Recovery (NFR11 target: < 120s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', resolved_at) AS time, AVG(EXTRACT(EPOCH FROM (resolved_at - opened_at))) AS mttr_seconds FROM incidents WHERE resolved_at IS NOT NULL AND $__timeFilter(resolved_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "piechart",
+      "title": "Incident Outcomes",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT status, COUNT(*) AS count FROM incidents WHERE $__timeFilter(opened_at) GROUP BY status"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "piechart",
+      "title": "Decision Source: Rules vs. LLM",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT agent, CASE WHEN llm_model IS NULL THEN 'rules' ELSE 'llm' END AS source, COUNT(*) AS count FROM agent_decisions WHERE $__timeFilter(created_at) GROUP BY 1, 2"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Recent Agent Decisions",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT created_at, agent, decision::text AS decision, validated, executed, llm_model, llm_cost_usd FROM agent_decisions WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 100"
+        }
+      ]
+    }
+  ]
+}

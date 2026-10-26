@@ -1,0 +1,12 @@
+# Scrapes only the Monitor Agent's /metrics (agents/monitor/metrics_export.py)
+# — the exposition of the snapshot it already computes each poll cycle, not
+# a second telemetry path. No rule_files/Alertmanager here: alerting is
+# Grafana's own unified alerting (infra/monitoring/grafana/provisioning/alerting/),
+# which can query this Prometheus directly — see ADR-0021 for why.
+global:
+  scrape_interval: 15s # matches MONITOR_POLL_INTERVAL_SECONDS' default
+
+scrape_configs:
+  - job_name: flowguard-monitor
+    static_configs:
+      - targets: ["monitor:8005"]

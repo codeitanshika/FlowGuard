@@ -1,0 +1,36 @@
+# Two datasources, one per kind of question (ADR-0021):
+#   - Prometheus: availability/error-rate/latency/throughput — continuously
+#     sampled gauges, the thing Prometheus is for.
+#   - Postgres (flowguard_control, same instance the agents already write
+#     to): MTTR, agent decisions, LLM cost — inherently record-shaped data
+#     that SQL fits better than a gauge, so it's queried directly rather
+#     than piped through a metrics format first.
+# Credentials here are the same local-dev Postgres superuser every other
+# service in docker-compose.yml already uses — fine for the local-only
+# monitoring overlay this is part of; a real deployment would want Grafana
+# on its own least-privilege, read-only role (see ADR-0021's Known Gaps).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: flowguard-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: flowguard_control (Postgres)
+    uid: flowguard-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: flowguard_control
+    user: flowguard
+    secureJsonData:
+      password: flowguard
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    editable: false

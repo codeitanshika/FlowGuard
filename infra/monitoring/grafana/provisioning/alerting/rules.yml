@@ -1,0 +1,87 @@
+# Two rules, one per datasource kind (ADR-0021): a continuously-sampled
+# metric (Prometheus) and an event/record condition (Postgres) that a
+# gauge can't express well — "has anything been stuck too long", not
+# "is a number too high right now".
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: flowguard-service-health
+    folder: FlowGuard
+    interval: 1m
+    rules:
+      - uid: flowguard-error-rate-high
+        title: Error rate above 10%
+        condition: C
+        for: 2m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} error rate is above 10%"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: flowguard-prometheus
+            model:
+              refId: A
+              instant: true
+              expr: flowguard_error_rate_ratio
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.1]
+
+  - orgId: 1
+    name: flowguard-self-healing
+    folder: FlowGuard
+    interval: 1m
+    rules:
+      - uid: flowguard-incident-stuck
+        title: An incident has been open longer than the NFR11 budget
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "At least one incident has been open for more than 120s without resolving — the Healer may be stuck or down"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: flowguard-postgres
+            model:
+              refId: A
+              format: table
+              rawSql: >-
+                SELECT COUNT(*) AS stuck_incidents FROM incidents
+                WHERE status NOT IN ('resolved', 'failed')
+                AND opened_at < now() - interval '120 seconds'
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]

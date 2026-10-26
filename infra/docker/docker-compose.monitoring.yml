@@ -1,0 +1,55 @@
+# Operator-facing monitoring stack (Phase 14, ADR-0021): Prometheus +
+# Grafana + a disposable local webhook receiver for verifying alert
+# delivery end-to-end. Deliberately NOT part of docker-compose.prod.yml —
+# these are operator tools, not public surface, the same posture as the
+# Ops Controller's loopback-only publication (Phase 8).
+#
+# Usage: docker compose -f docker-compose.yml -f infra/docker/docker-compose.monitoring.yml up -d
+# Grafana: http://localhost:3000 (admin / see GF_SECURITY_ADMIN_PASSWORD below)
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.2
+    volumes:
+      # Relative to the project directory (docker-compose.yml's directory,
+      # repo root — always listed first), not this file's own directory;
+      # see ADR-0020 decision 8 for why that isn't the same thing.
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      monitor:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      # Local-only convenience credential — change before exposing this
+      # overlay anywhere beyond a workstation (it never ships in the
+      # production overlay in the first place).
+      GF_SECURITY_ADMIN_PASSWORD: flowguard
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+  alertsink:
+    image: python:3.12-alpine
+    command: ["python", "/alertsink/server.py", "9099"]
+    volumes:
+      - ./infra/monitoring/alertsink:/alertsink:ro
+    ports:
+      - "9099:9099"
+
+volumes:
+  prometheus_data:
+  grafana_data:

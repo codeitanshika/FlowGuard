@@ -1,0 +1,14 @@
+# The local alertsink (infra/monitoring/alertsink/server.py) — exists so
+# alert delivery can be verified end-to-end without a real Slack/PagerDuty
+# account. Point this at a real webhook URL for any real deployment.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: flowguard-webhook
+    receivers:
+      - uid: flowguard-webhook-receiver
+        type: webhook
+        settings:
+          url: http://alertsink:9099/grafana-alert
+          httpMethod: POST

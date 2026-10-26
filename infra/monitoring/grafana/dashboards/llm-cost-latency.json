@@ -1,0 +1,84 @@
+{
+  "uid": "flowguard-llm-cost-latency",
+  "title": "FlowGuard — LLM Cost & Latency",
+  "tags": ["flowguard"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total LLM Cost (window)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(llm_cost_usd), 0) AS total_cost_usd FROM agent_decisions WHERE $__timeFilter(created_at)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "LLM Calls (window)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS llm_calls FROM agent_decisions WHERE llm_model IS NOT NULL AND $__timeFilter(created_at)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Cost Over Time, by Agent",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, agent, SUM(llm_cost_usd) AS cost_usd FROM agent_decisions WHERE llm_cost_usd IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1, agent ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Average LLM Latency, by Agent",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, agent, AVG(llm_latency_ms) AS avg_latency_ms FROM agent_decisions WHERE llm_latency_ms IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1, agent ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Recent LLM Calls",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "flowguard-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT created_at, agent, llm_model, llm_tokens_in, llm_tokens_out, llm_latency_ms, llm_cost_usd FROM agent_decisions WHERE llm_model IS NOT NULL AND $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 100"
+        }
+      ]
+    }
+  ]
+}
