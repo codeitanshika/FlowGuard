@@ -23,4 +23,12 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9099
-    HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+    # Must accept connections arriving via the Docker network, not just its
+    # own loopback — Grafana reaches it as http://alertsink:9099, a
+    # different container. This overlay does publish it to the host too
+    # (infra/docker/docker-compose.monitoring.yml), for the same reason
+    # every other local-only overlay in this project does: so it can be
+    # curled directly while verifying it, same posture as every
+    # local-dev-only binding elsewhere in this repo, never part of
+    # docker-compose.prod.yml.
+    HTTPServer(("0.0.0.0", port), Handler).serve_forever()  # nosec B104
