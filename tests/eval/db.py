@@ -10,8 +10,19 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from shared.control_plane import AgentDecision
+from shared.control_plane import AgentDecision, Anomaly
 from tests.chaos.db import _session  # noqa: F401 - reusing the same connection helper, not re-deriving it
+
+
+async def any_anomaly_after(after: datetime) -> Anomaly | None:
+    """Unlike tests.chaos.db.latest_anomaly_after, this checks across every
+    service and metric — the healthy-control case's false-positive check
+    needs "did anything at all fire", not "did one specific pair fire"."""
+    async with _session() as db:
+        result = await db.execute(
+            select(Anomaly).where(Anomaly.detected_at >= after).order_by(Anomaly.detected_at.asc()).limit(1)
+        )
+        return result.scalar_one_or_none()
 
 
 async def decision_for_incident(incident_id: uuid.UUID) -> AgentDecision | None:
