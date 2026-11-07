@@ -14,6 +14,13 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir --prefix=/install .
 
 FROM python:3.12-slim
+# Base-image OS packages are patched at the time python:3.12-slim was last
+# published, not at build time — Trivy (infra/ci) gates on fixable HIGH/
+# CRITICAL CVEs, so a security fix landing in Debian between those two
+# moments otherwise fails every build identically (found via a real CI
+# run: CVE-2026-76844/CVE-2026-85091 in zlib1g, fixed in trixie's security
+# repo but not yet in the cached base layer).
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 1000 appuser
 WORKDIR /app
 COPY --from=builder /install /usr/local
