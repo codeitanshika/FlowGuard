@@ -29,8 +29,13 @@ CONTROL_CASE = HealerEvalCase(
 
 def _anomaly(service="payment", metric="error_rate") -> Anomaly:
     return Anomaly(
-        id=uuid.uuid4(), service=service, metric=metric, observed_value=1.0, threshold=0.2,
-        severity=AnomalySeverity.critical, trace_id=None,
+        id=uuid.uuid4(),
+        service=service,
+        metric=metric,
+        observed_value=1.0,
+        threshold=0.2,
+        severity=AnomalySeverity.critical,
+        trace_id=None,
     )
 
 
@@ -40,15 +45,23 @@ def _incident(action_taken: str | None, status=IncidentStatus.resolved) -> Incid
 
 def _decision(llm_model: str | None = None, prompt_version: str | None = None) -> AgentDecision:
     return AgentDecision(
-        id=uuid.uuid4(), agent="healer", input_summary={}, decision={}, validated=True, executed=True,
-        llm_model=llm_model, llm_prompt_version=prompt_version,
+        id=uuid.uuid4(),
+        agent="healer",
+        input_summary={},
+        decision={},
+        validated=True,
+        executed=True,
+        llm_model=llm_model,
+        llm_prompt_version=prompt_version,
     )
 
 
 def test_parse_action_taken_strips_trailing_explanation():
     assert parse_action_taken("open-circuit:payment:provider") == ("open-circuit", "payment", "provider")
     assert parse_action_taken("open-circuit:payment:fraud (already applied by an earlier action)") == (
-        "open-circuit", "payment", "fraud",
+        "open-circuit",
+        "payment",
+        "fraud",
     )
 
 
@@ -58,9 +71,7 @@ def test_parse_action_taken_returns_none_for_escalation_or_noise():
 
 
 def test_correct_detection_and_action_passes():
-    result = grade_healer_case(
-        PROVIDER_CASE, _anomaly(), _incident("open-circuit:payment:provider"), _decision()
-    )
+    result = grade_healer_case(PROVIDER_CASE, _anomaly(), _incident("open-circuit:payment:provider"), _decision())
     assert result.passed
     assert result.root_cause_correct is True
     assert result.action_correct is True
@@ -69,7 +80,9 @@ def test_correct_detection_and_action_passes():
 
 def test_llm_sourced_decision_is_reported_as_llm():
     result = grade_healer_case(
-        PROVIDER_CASE, _anomaly(), _incident("open-circuit:payment:provider"),
+        PROVIDER_CASE,
+        _anomaly(),
+        _incident("open-circuit:payment:provider"),
         _decision(llm_model="claude-opus-5", prompt_version="healer-v1"),
     )
     assert result.source == "llm"
@@ -77,9 +90,7 @@ def test_llm_sourced_decision_is_reported_as_llm():
 
 
 def test_wrong_action_is_not_a_false_positive_but_fails_action_grading():
-    result = grade_healer_case(
-        PROVIDER_CASE, _anomaly(), _incident("open-circuit:payment:fraud"), _decision()
-    )
+    result = grade_healer_case(PROVIDER_CASE, _anomaly(), _incident("open-circuit:payment:fraud"), _decision())
     assert not result.false_positive
     assert not result.false_negative
     assert result.action_correct is False
