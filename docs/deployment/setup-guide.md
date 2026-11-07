@@ -681,3 +681,31 @@ Gateway), then:
 4. During a fault-injection run (Phase 6), filter by `error=true` and
    cross-reference the trace ID with the `agent_decisions` audit table
    to see which Healer decision that trace triggered.
+
+## Running the Evaluation Harness (Phase 15)
+
+Design: [ADR-0022](../decisions/ADR-0022-eval-harness-reuses-chaos-scenarios-as-ground-truth.md).
+Grades the Healer and Fraud Agent against the labeled dataset in
+`tests/eval/dataset.py` — two real chaos scenarios, a healthy control,
+and two Fraud Agent velocity cases — and prints detection/root-cause/
+action accuracy grouped by `source` (`rules`/`llm`) and
+`prompt_version`. From the repo root, with the test compose override up:
+
+```bash
+docker compose -f docker-compose.yml -f infra/docker/docker-compose.test.yml up -d
+python -m tests.eval.report --runs 1   # takes a few minutes: real faults, real waits
+```
+
+A clean run looks like `5/5 passed (100%); 0 false positive(s), 0 false
+negative(s)`. Re-run this after any change to the Healer's/Fraud Agent's
+prompts, rules, or model — a regression shows up as a row whose
+`result` flips to `FAIL` against the exact same ground truth, not as a
+feeling that something seems different.
+
+**Known caveat:** every run so far shows `source=rules` for every case —
+no `ANTHROPIC_API_KEY` is configured locally, so the LLM path has never
+been exercised live here, the same honestly-reported gap as Phases 8, 9,
+and 14. On Windows, piping this report's output to a file without an
+explicit UTF-8 encoding can render one existing Phase 11 message's em
+dash as a mojibake character — cosmetic, not a data or grading bug (see
+ADR-0022's Consequences).
