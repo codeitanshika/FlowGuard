@@ -27,3 +27,4 @@ the order they were made; a superseded ADR is marked, never deleted.
 | [0019](ADR-0019-cicd-build-once-promote-the-artifact.md) | CI/CD builds once and promotes the artifact; one tool for style; every gate checked before it was wired in |
 | [0020](ADR-0020-single-vm-production-deployment.md) | A single VM behind Caddy, Terraform built but not applied, secrets never through env_file |
 | [0021](ADR-0021-grafana-prometheus-monitoring-reusing-what-already-exists.md) | Grafana + Prometheus for monitoring, reusing what already exists rather than a new metrics pipeline |
+| [0022](ADR-0022-eval-harness-reuses-chaos-scenarios-as-ground-truth.md) | The evaluation harness reuses chaos scenarios as ground truth, grades on real effects not self-reports |
