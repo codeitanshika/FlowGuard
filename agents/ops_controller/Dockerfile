@@ -2,7 +2,7 @@
 # stage can reach shared/. Keeps its `agents.ops_controller` package path so
 # imports match the unit tests.
 
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends gcc \
     && rm -rf /var/lib/apt/lists/*
@@ -10,7 +10,7 @@ COPY agents/ops_controller/pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir --prefix=/install .
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 # Base-image OS packages are patched at the time python:3.12-slim was last
 # published, not at build time — Trivy (infra/ci) gates on fixable HIGH/
 # CRITICAL CVEs, so a security fix landing in Debian between those two
